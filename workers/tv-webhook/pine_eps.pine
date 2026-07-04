@@ -1,0 +1,15 @@
+//@version=5
+indicator("S&P 500 EPS Alert", overlay=false)
+
+// Monthly Multpl series — S&P 500 trailing 12-month earnings per share.
+// Mirrors pine_buffett.pine: pulls the series via request.security so the
+// script works on any chart, then fires once per confirmed monthly bar.
+eps = request.security("MULTPL:SP500_EARNINGS_MONTH", "1M", close, ignore_invalid_symbol=true)
+
+plot(eps, "S&P 500 TTM EPS", color=color.teal, linewidth=2)
+
+// Fire once per monthly bar close — embeds the EPS value in the JSON payload.
+// Replace <TV_SECRET> with the same secret used in pine_buffett.pine (your TV_SECRET).
+if barstate.isconfirmed and not na(eps)
+    msg = '{"ticker":"EPS","value":' + str.tostring(eps, "#.##") + ',"time":' + str.tostring(math.round(time / 1000)) + ',"secret":"<TV_SECRET>"}'
+    alert(msg, alert.freq_once_per_bar_close)

@@ -1,0 +1,9 @@
+{
+  "name": "market-hub-email-ingest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "postal-mime": "^2.7.5"
+  }
+}

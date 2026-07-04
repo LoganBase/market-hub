@@ -1,0 +1,39 @@
+# Cloudflare Pages response headers
+
+# HTML files — always revalidate so cache-busted script ?v= params take effect
+/v2/
+  Cache-Control: no-cache, must-revalidate
+
+/v2/index.html
+  Cache-Control: no-cache, must-revalidate
+
+/mobile/
+  Cache-Control: no-cache, must-revalidate
+
+/mobile/index.html
+  Cache-Control: no-cache, must-revalidate
+
+/market-hub/
+  Cache-Control: no-cache, must-revalidate
+
+/market-hub/index.html
+  Cache-Control: no-cache, must-revalidate
+
+/
+  Cache-Control: no-cache, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, must-revalidate
+
+# JSX/JS source files served with version query strings — fine to cache
+/ui_kits/desktop/*.js
+  Cache-Control: public, max-age=86400
+
+/ui_kits/desktop/*.jsx
+  Cache-Control: public, max-age=86400
+
+/ui_kits/mobile/*.js
+  Cache-Control: public, max-age=86400
+
+/ui_kits/mobile/*.jsx
+  Cache-Control: public, max-age=86400

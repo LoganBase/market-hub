@@ -1,0 +1,16 @@
+//@version=5
+indicator("NYSE ADID Alert", overlay=false)
+
+// NYSE advance-decline difference (net advancers − decliners), daily, signed.
+// Mirrors pine_buffett.pine: pulls the series via request.security so the
+// script works on any chart, then fires once per confirmed daily bar.
+adid = request.security("INDEX:ADDN", "1D", close, ignore_invalid_symbol=true)
+
+plot(adid, "NYSE ADID", color=color.aqua, linewidth=1)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dotted)
+
+// Fire once per daily bar close — embeds the signed value in the JSON payload.
+// Replace <TV_SECRET> with the same secret used in pine_buffett.pine (your TV_SECRET).
+if barstate.isconfirmed and not na(adid)
+    msg = '{"ticker":"ADDN","value":' + str.tostring(math.round(adid)) + ',"time":' + str.tostring(math.round(time / 1000)) + ',"secret":"<TV_SECRET>"}'
+    alert(msg, alert.freq_once_per_bar_close)

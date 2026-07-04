@@ -1,0 +1,20 @@
+//@version=5
+indicator("Buffett Indicator Alert", overlay=false)
+
+// Quarterly FRED series (both in billions USD)
+// NCBEILQ027S = Nonfinancial Corporate Business Equities Liability (total stock market value)
+// GDP         = Gross Domestic Product (seasonally adjusted annual rate)
+mc  = request.security("FRED:NCBEILQ027S", "3M", close, ignore_invalid_symbol=true)
+gdp = request.security("FRED:GDP",         "3M", close, ignore_invalid_symbol=true)
+
+ratio = (not na(mc) and not na(gdp) and gdp > 0) ? (mc / gdp * 100) : na
+
+plot(ratio, "Buffett Ratio %", color=color.orange, linewidth=2)
+hline(160, "Extreme",      color=color.red,    linestyle=hline.style_dotted)
+hline(115, "Overvalued",   color=color.orange, linestyle=hline.style_dotted)
+hline(80,  "Fair Value",   color=color.green,  linestyle=hline.style_dotted)
+
+// Fire once per quarterly bar close — embeds the computed ratio in the JSON payload
+if barstate.isconfirmed and not na(ratio)
+    msg = '{"ticker":"BUFFETT","value":' + str.tostring(ratio, "#.##") + ',"time":' + str.tostring(math.round(time / 1000)) + ',"secret":"E9NlH2j7Pn_PfDJ_ORDURhr_GQ2tXM957xAx7gcoq2A"}'
+    alert(msg, alert.freq_once_per_bar_close)

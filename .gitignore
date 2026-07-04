@@ -1,0 +1,5 @@
+seed/.env
+.env
+.agents/
+seed/*.csv
+node_modules/

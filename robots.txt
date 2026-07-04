@@ -1,0 +1,7 @@
+# Allow all crawlers (public site)
+User-agent: *
+Allow: /
+
+# To block all crawlers, replace the above with:
+# User-agent: *
+# Disallow: /

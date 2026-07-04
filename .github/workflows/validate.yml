@@ -1,0 +1,101 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    name: JS Syntax Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check functions/api syntax
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const files = fs.readdirSync('functions/api').filter(f => f.endsWith('.js'));
+            let failed = 0;
+            for (const file of files) {
+              try {
+                const src = fs.readFileSync(path.join('functions/api', file), 'utf8');
+                // Strip import lines entirely; remove 'export' keyword but keep the declaration
+                // (commenting out 'export async function' would orphan the body and break await)
+                new Function(
+                  src
+                    .replace(/^import\b[^\n]*/gm, '')
+                    // 'export default {' → 'const __exp = {' keeps '{' as object literal,
+                    // not a block — so async method shorthands inside remain valid
+                    .replace(/^export\s+default\s+/gm, 'const __exp = ')
+                    .replace(/^export\s+/gm, '')
+                );
+              } catch (e) {
+                console.error('SYNTAX ERROR in', file, ':', e.message);
+                failed++;
+              }
+            }
+            if (failed > 0) process.exit(1);
+            console.log('All', files.length, 'functions/api files passed syntax check');
+          "
+
+      - name: Check workers syntax
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const workers = ['workers/tv-webhook/index.js', 'workers/data-refresh/index.js', 'workers/email-ingest/index.js', 'workers/pe-updater/index.js'];
+            let failed = 0;
+            for (const file of workers) {
+              if (!fs.existsSync(file)) continue;
+              try {
+                const src = fs.readFileSync(file, 'utf8');
+                new Function(
+                  src
+                    .replace(/^import\b[^\n]*/gm, '')
+                    .replace(/^export\s+default\s+/gm, 'const __exp = ')
+                    .replace(/^export\s+/gm, '')
+                );
+              } catch (e) {
+                console.error('SYNTAX ERROR in', file, ':', e.message);
+                failed++;
+              }
+            }
+            if (failed > 0) process.exit(1);
+            console.log('All worker files passed syntax check');
+          "
+
+  health:
+    name: Production Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: syntax
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Wait for Cloudflare Pages deploy
+        run: sleep 120
+
+      - name: Check /api/health
+        run: |
+          RESPONSE=$(curl -s --max-time 15 https://market.loganbase.com/api/health 2>/dev/null || true)
+          if [ -z "$RESPONSE" ]; then
+            echo "::warning::Could not reach /api/health — deploy may still be in progress"
+            exit 0
+          fi
+          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "parse-error")
+          echo "Health status: $STATUS"
+          if [ "$STATUS" = "error" ]; then
+            echo "::warning::Production health check returned status=error after deploy"
+          elif [ "$STATUS" = "parse-error" ]; then
+            echo "::warning::Health endpoint returned non-JSON — response: ${RESPONSE:0:200}"
+          fi

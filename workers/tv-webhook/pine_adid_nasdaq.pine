@@ -1,0 +1,15 @@
+//@version=5
+indicator("Nasdaq ADID Alert", overlay=false)
+
+// Nasdaq advance-decline difference (net advancers − decliners), daily, signed.
+// Mirrors pine_adid_nyse.pine — pulls INDEX:ADDQ via request.security and fires
+// once per confirmed daily bar.
+adid = request.security("INDEX:ADDQ", "1D", close, ignore_invalid_symbol=true)
+
+plot(adid, "Nasdaq ADID", color=color.orange, linewidth=1)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dotted)
+
+// Replace <TV_SECRET> with the same secret used in your other alert scripts.
+if barstate.isconfirmed and not na(adid)
+    msg = '{"ticker":"ADDQ","value":' + str.tostring(math.round(adid)) + ',"time":' + str.tostring(math.round(time / 1000)) + ',"secret":"<TV_SECRET>"}'
+    alert(msg, alert.freq_once_per_bar_close)

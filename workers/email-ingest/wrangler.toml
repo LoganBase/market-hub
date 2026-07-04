@@ -1,0 +1,13 @@
+name = "market-hub-email-ingest"
+main = "index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "market-hub-db"
+database_id = "5a47907a-b221-40c7-87ac-824f257395ac"
+
+# No [triggers] block — this worker is invoked by Cloudflare Email Routing,
+# which is configured in the Cloudflare dashboard (Email > Email Routing > Routes).
+# Secret: ANTHROPIC_API_KEY — set via: npx wrangler secret put ANTHROPIC_API_KEY

@@ -1,0 +1,13 @@
+name = "market-hub-data-refresh"
+main = "index.js"
+compatibility_date = "2024-09-23"
+
+[triggers]
+crons = ["0 22 * * 1-5"]   # Mon–Fri 22:00 UTC = 6 PM ET (after US market close)
+
+[vars]
+SITE_URL = "https://market.loganbase.com"
+
+# HUB_TOKEN and CRON_SECRET are stored as secrets — set via deploy.py or:
+#   npx wrangler secret put HUB_TOKEN
+#   npx wrangler secret put CRON_SECRET
