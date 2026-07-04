@@ -1458,14 +1458,19 @@ function NyseBreadthChart() {
       .then(r => r.json())
       .then(j => {
         if (!alive) return;
-        if (Array.isArray(j.mmth) && j.mmth.length) {
+        if (Array.isArray(j.mmth) && j.mmth.some(v => v != null)) {
+          // The shared breadth-history endpoint also returns ADID-only dates
+          // (which have null MMTH/MMFI). Keep only dates that actually have a
+          // breadth reading, so the line connects cleanly instead of gapping.
+          const mmfiArr = j.mmfi || [];
+          const keep = (j.dates || []).map((_, i) => i).filter(i => j.mmth[i] != null || mmfiArr[i] != null);
           setLive({
-            values: j.mmth,
-            dates:  j.dates || [],
+            values: keep.map(i => j.mmth[i]),
+            dates:  keep.map(i => j.dates[i]),
             label:  '$MMTH (200d)',
             format: 'pct_abs',
             lineColor: '#a855f7',
-            overlays: [{ label: '$MMFI (50d)', values: j.mmfi || [], color: '#22d3ee', dash: null }],
+            overlays: [{ label: '$MMFI (50d)', values: keep.map(i => mmfiArr[i]), color: '#22d3ee', dash: null }],
             thresholds: [{ y: 70, color: '#22c55e' }, { y: 40, color: '#ef4444' }],
           });
         } else {
