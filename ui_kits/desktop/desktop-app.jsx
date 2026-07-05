@@ -12,6 +12,19 @@ function useIsMobile() {
   return m;
 }
 
+// True when viewport is at least `bp` wide — drives the Workspace list/detail
+// collapse (single-pane in portrait, two-pane in landscape/desktop).
+function useMinWidth(bp) {
+  const [ok, setOk] = useStateA(window.innerWidth >= bp);
+  useEffectA(() => {
+    const h = () => setOk(window.innerWidth >= bp);
+    window.addEventListener('resize', h);
+    window.addEventListener('orientationchange', h);
+    return () => { window.removeEventListener('resize', h); window.removeEventListener('orientationchange', h); };
+  }, [bp]);
+  return ok;
+}
+
 // Live data hook: paints the bundled mock instantly, then swaps in /api/scores
 // data if the adapter can reach it (production). In the preview it stays on mock.
 function useGlance() {
@@ -1454,14 +1467,22 @@ function OptionWorkspace({ D }) {
   const brief = useDailyBrief();
   const special = sel === 'daily-brief' || sel === 'exec-summary' || sel === 'macro-brief';
   const card = special ? null : D.cards[sel];
+  // Responsive list/detail: two-pane when wide, single-pane drill-in when narrow.
+  const twoPane = useMinWidth(640);
+  const [detailOpen, setDetailOpen] = useStateA(false);
+  const goTo = (id) => { setSel(id); setDetailOpen(true); };
+  const backToList = () => setDetailOpen(false);
+  const briefBack = () => { twoPane ? setSel(allIds[0]) : backToList(); };
+  const showRail = twoPane || !detailOpen;
+  const showDetail = twoPane || detailOpen;
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 58px)', overflow: 'hidden' }}>
       {/* left rail */}
-      <div style={{ width: 340, flexShrink: 0, borderRight: '1px solid #16202e', background: '#0a0f17', overflowY: 'auto', padding: '20px 16px' }}>
+      <div style={{ display: showRail ? 'block' : 'none', width: twoPane ? 340 : '100%', flexShrink: 0, borderRight: twoPane ? '1px solid #16202e' : 'none', background: '#0a0f17', overflowY: 'auto', padding: '20px 16px' }}>
         <div style={{ padding: '4px 8px 18px', borderBottom: '1px solid #16202e', marginBottom: 16 }}>
           {/* Row 1: three-horizon strip — click opens the full market summary (rich Glance hero) */}
           {D.horizons && (
-            <button onClick={() => setSel('exec-summary')} title="Open the full market summary" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', borderRadius: 10, padding: '4px 6px',
+            <button onClick={() => goTo('exec-summary')} title="Open the full market summary" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', borderRadius: 10, padding: '4px 6px',
               background: sel === 'exec-summary' ? '#141f2e' : 'transparent', border: `1px solid ${sel === 'exec-summary' ? '#24364a' : 'transparent'}` }}>
               <HorizonRailMini horizons={D.horizons} />
             </button>
@@ -1510,7 +1531,7 @@ function OptionWorkspace({ D }) {
               {g.ids.map((id) => {
                 const c = D.cards[id], sg = DSIG[c.status], on = id === sel;
                 return (
-                  <button key={id} onClick={() => setSel(id)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 10,
+                  <button key={id} onClick={() => goTo(id)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 10,
                     background: on ? '#141f2e' : 'transparent', border: `1px solid ${on ? '#24364a' : 'transparent'}`, borderLeft: `3px solid ${on ? sg.c : 'transparent'}` }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: sg.c, boxShadow: `0 0 6px ${sg.glow}`, flexShrink: 0 }} />
                     <span style={{ fontFamily: DSANS, fontSize: 13.5, color: on ? '#e8edf5' : '#cbd5e1', fontWeight: on ? 600 : 400, flex: 1 }}>{c.title}</span>
@@ -1543,7 +1564,7 @@ function OptionWorkspace({ D }) {
             </div>
           </div>
         ))}
-        <button onClick={() => setSel('daily-brief')} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10,
+        <button onClick={() => goTo('daily-brief')} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10,
           background: sel === 'daily-brief' ? '#141f2e' : '#111827',
           border: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
           borderLeft: `3px solid ${brief ? sentimentColor(brief.isWeekly ? Math.round(brief.avgSentiment) : brief.sentiment) : '#1e2d3d'}` }}>
@@ -1571,14 +1592,20 @@ function OptionWorkspace({ D }) {
             <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>{brief.weekLabel} · {brief.briefs?.length ?? 0} days · {brief.dominantSector}</span>
           )}
         </button>
-        <MacroBriefWorkspacePanel onClick={() => setSel('macro-brief')} active={sel === 'macro-brief'} />
+        <MacroBriefWorkspacePanel onClick={() => goTo('macro-brief')} active={sel === 'macro-brief'} />
       </div>
       {/* right deep-dive */}
-      <div style={{ flex: 1, overflowY: 'scroll', padding: (sel === 'daily-brief' || sel === 'macro-brief') ? '0' : '28px 36px 60px' }}>
+      <div style={{ display: showDetail ? 'block' : 'none', flex: 1, overflowY: 'scroll', padding: (sel === 'daily-brief' || sel === 'macro-brief') ? '0' : (twoPane ? '28px 36px 60px' : '8px 14px 40px') }}>
+        {!twoPane && detailOpen && sel !== 'daily-brief' && sel !== 'macro-brief' && (
+          <button onClick={backToList} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 4px 14px' }}>
+            <svg width="8" height="13" viewBox="0 0 8 13"><path d="M6.5 1L1.5 6.5l5 5.5" stroke="#94a3b8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span style={{ fontFamily: DSANS, fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>All signals</span>
+          </button>
+        )}
         {sel === 'daily-brief' ? (
-          <DailyBriefDeepDive brief={brief} D={D} onBack={() => setSel(allIds[0])} />
+          <DailyBriefDeepDive brief={brief} D={D} onBack={briefBack} />
         ) : sel === 'macro-brief' ? (
-          <MacroBriefDeepDive onBack={() => setSel(allIds[0])} />
+          <MacroBriefDeepDive onBack={briefBack} />
         ) : sel === 'exec-summary' ? (
           <div style={{ maxWidth: 820, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 24 }}>
