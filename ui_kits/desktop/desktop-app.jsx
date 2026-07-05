@@ -322,12 +322,12 @@ function MacroBriefDeepDive({ onBack }) {
 }
 
 // ── Macro Brief compact panel for Workspace left rail ──
-function MacroBriefWorkspacePanel() {
+function MacroBriefWorkspacePanel({ onClick, active }) {
   const { status, narrative, date } = useMacroBrief();
   const dateLabel = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
   const preview   = narrative ? narrative.slice(0, 200) + (narrative.length > 200 ? '…' : '') : null;
   return (
-    <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 10, background: '#0d1520', border: '1px solid #1e2d3d', borderLeft: `3px solid ${status === 'ready' ? '#60a5fa' : '#1e2d3d'}` }}>
+    <button onClick={onClick} title="Open the full Macro Brief" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10, background: active ? '#141f2e' : '#0d1520', border: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderLeft: `3px solid ${status === 'ready' ? '#60a5fa' : '#1e2d3d'}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: status === 'unavailable' ? 0 : 9 }}>
         <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#8295a9', flex: 1 }}>Macro Brief</span>
         {status === 'ready' && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 600, color: '#60a5fa' }}>✦</span>}
@@ -336,7 +336,7 @@ function MacroBriefWorkspacePanel() {
       {status === 'loading'     && <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#475569' }}>Synthesizing…</span>}
       {status === 'unavailable' && <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#475569' }}>Requires today's Close Update</span>}
       {status === 'ready' && preview && <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.55 }}>{preview}</span>}
-    </div>
+    </button>
   );
 }
 
@@ -1452,14 +1452,20 @@ function OptionWorkspace({ D }) {
   const [sel, setSelRaw] = useStateA(() => { try { const v = localStorage.getItem('mh-ws-sel'); return v && D.cards[v] ? v : allIds[0]; } catch (e) { return allIds[0]; } });
   const setSel = (id) => { setSelRaw(id); try { localStorage.setItem('mh-ws-sel', id); } catch (e) {} };
   const brief = useDailyBrief();
-  const card = sel === 'daily-brief' ? null : D.cards[sel];
+  const special = sel === 'daily-brief' || sel === 'exec-summary' || sel === 'macro-brief';
+  const card = special ? null : D.cards[sel];
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 58px)', overflow: 'hidden' }}>
       {/* left rail */}
       <div style={{ width: 340, flexShrink: 0, borderRight: '1px solid #16202e', background: '#0a0f17', overflowY: 'auto', padding: '20px 16px' }}>
         <div style={{ padding: '4px 8px 18px', borderBottom: '1px solid #16202e', marginBottom: 16 }}>
-          {/* Row 1: three-horizon strip (falls back to composite donut when horizons absent) */}
-          {D.horizons && <HorizonRailMini horizons={D.horizons} />}
+          {/* Row 1: three-horizon strip — click opens the full market summary (rich Glance hero) */}
+          {D.horizons && (
+            <button onClick={() => setSel('exec-summary')} title="Open the full market summary" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', borderRadius: 10, padding: '4px 6px',
+              background: sel === 'exec-summary' ? '#141f2e' : 'transparent', border: `1px solid ${sel === 'exec-summary' ? '#24364a' : 'transparent'}` }}>
+              <HorizonRailMini horizons={D.horizons} />
+            </button>
+          )}
           {!D.horizons && (() => {
             const wsTotal = D.exec.bull + D.exec.neutral + D.exec.bear;
             const wsPct = wsTotal > 0 ? Math.round((D.exec.bull + D.exec.neutral * 0.5) / wsTotal * 100) : 0;
@@ -1565,12 +1571,22 @@ function OptionWorkspace({ D }) {
             <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>{brief.weekLabel} · {brief.briefs?.length ?? 0} days · {brief.dominantSector}</span>
           )}
         </button>
-        <MacroBriefWorkspacePanel />
+        <MacroBriefWorkspacePanel onClick={() => setSel('macro-brief')} active={sel === 'macro-brief'} />
       </div>
       {/* right deep-dive */}
-      <div style={{ flex: 1, overflowY: 'scroll', padding: sel === 'daily-brief' ? '0' : '28px 36px 60px' }}>
+      <div style={{ flex: 1, overflowY: 'scroll', padding: (sel === 'daily-brief' || sel === 'macro-brief') ? '0' : '28px 36px 60px' }}>
         {sel === 'daily-brief' ? (
           <DailyBriefDeepDive brief={brief} D={D} onBack={() => setSel(allIds[0])} />
+        ) : sel === 'macro-brief' ? (
+          <MacroBriefDeepDive onBack={() => setSel(allIds[0])} />
+        ) : sel === 'exec-summary' ? (
+          <div style={{ maxWidth: 820, margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 24 }}>
+              <span style={{ fontFamily: DSANS, fontSize: 25, fontWeight: 700, color: '#e8edf5' }}>Market Summary</span>
+              <span style={{ marginLeft: 'auto', fontFamily: DMONO, fontSize: 12, color: '#64748b' }}>As of {D.asOf}</span>
+            </div>
+            <HorizonHero horizons={D.horizons} exec={D.exec} />
+          </div>
         ) : (
           <div style={{ maxWidth: 820, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 24 }}>
