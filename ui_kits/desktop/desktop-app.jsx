@@ -340,7 +340,7 @@ function MacroBriefWorkspacePanel({ onClick, active }) {
   const dateLabel = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
   const preview   = narrative ? narrative.slice(0, 200) + (narrative.length > 200 ? '…' : '') : null;
   return (
-    <button onClick={onClick} title="Open the full Macro Brief" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10, background: active ? '#141f2e' : '#0d1520', border: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderLeft: `3px solid ${status === 'ready' ? '#60a5fa' : '#1e2d3d'}` }}>
+    <button onClick={onClick} title="Open the full Macro Brief" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10, background: active ? '#141f2e' : '#0d1520', borderTop: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderRight: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderBottom: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderLeft: `3px solid ${status === 'ready' ? '#60a5fa' : '#1e2d3d'}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: status === 'unavailable' ? 0 : 9 }}>
         <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#8295a9', flex: 1 }}>Macro Brief</span>
         {status === 'ready' && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 600, color: '#60a5fa' }}>✦</span>}
@@ -1566,7 +1566,9 @@ function OptionWorkspace({ D }) {
         ))}
         <button onClick={() => goTo('daily-brief')} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10,
           background: sel === 'daily-brief' ? '#141f2e' : '#111827',
-          border: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
+          borderTop: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
+          borderRight: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
+          borderBottom: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
           borderLeft: `3px solid ${brief ? sentimentColor(brief.isWeekly ? Math.round(brief.avgSentiment) : brief.sentiment) : '#1e2d3d'}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: brief ? 9 : 0 }}>
             <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#8295a9', flex: 1 }}>{brief?.isWeekly ? 'Weekly Brief' : 'Daily Brief'}</span>
