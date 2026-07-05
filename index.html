@@ -3,6 +3,14 @@
 <head>
 <script>
   (function(){
+    // Preview toggle: ?full loads the responsive desktop kit on phones (persists);
+    // ?mobile clears it. Lets us test the responsive Workspace before switching routing.
+    try {
+      if (location.search.indexOf("full") > -1)   localStorage.setItem("mh-full", "1");
+      if (location.search.indexOf("mobile") > -1)  localStorage.removeItem("mh-full");
+    } catch (e) {}
+    var forced = false; try { forced = localStorage.getItem("mh-full") === "1"; } catch (e) {}
+    if (forced) return;
     var m = window.matchMedia("(max-width: 767px)").matches || /Mobi|Android|iPhone|iPod/i.test(navigator.userAgent);
     if (m && location.pathname.indexOf("/mobile") !== 0) location.replace("/mobile/");
   })();
