@@ -80,21 +80,22 @@ function usd(n) { return n != null ? `$${n.toLocaleString('en-US', { minimumFrac
 function num(n, d = 1) { return n != null ? n.toFixed(d) : '\u2014'; }
 
 // ── D1 SOURCE ─────────────────────────────────────────────────────────────────
-async function loadFromD1(db) {
+async function loadFromD1(db, asOf = null) {
   try {
     // Last 35 calendar days covers ~25 trading days \u2014 enough for 20-day return + changePct
+    const anchor = asOf ? `'${asOf}'` : `'now'`;
     const { results: priceRows } = await db.prepare(
       `SELECT symbol, date, close FROM daily_prices
-       WHERE date >= DATE('now', '-35 days')
+       WHERE date >= DATE(${anchor}, '-35 days')${asOf ? ` AND date <= '${asOf}'` : ''}
        ORDER BY symbol, date DESC`
     ).all();
 
-    // Latest indicator row per symbol
+    // Latest indicator row per symbol (as-of asOf when set)
     const { results: indRows } = await db.prepare(
       `SELECT i.symbol, i.sma50, i.sma200, i.rsi14, i.vs200_pct
        FROM indicators i
        INNER JOIN (
-         SELECT symbol, MAX(date) as max_date FROM indicators GROUP BY symbol
+         SELECT symbol, MAX(date) as max_date FROM indicators${asOf ? ` WHERE date <= '${asOf}'` : ''} GROUP BY symbol
        ) latest ON i.symbol = latest.symbol AND i.date = latest.max_date`
     ).all();
 
@@ -765,10 +766,10 @@ async function loadJapanPeLatest(db) {
 }
 
 // ── BREADTH D1 SOURCE ─────────────────────────────────────────────────────────
-async function loadBreadthLatest(db) {
+async function loadBreadthLatest(db, asOf = null) {
   try {
     const { results } = await db.prepare(
-      `SELECT date, pct_above_200d, pct_above_50d FROM market_breadth ORDER BY date DESC LIMIT 1`
+      `SELECT date, pct_above_200d, pct_above_50d FROM market_breadth${asOf ? ` WHERE date <= '${asOf}'` : ''} ORDER BY date DESC LIMIT 1`
     ).all();
     return results?.[0] ?? null;
   } catch { return null; }
@@ -870,10 +871,10 @@ async function loadBuffettLatest(db) {
 // Trailing-12m EPS from sp500_eps (Multpl via TV webhook). Direction, not level:
 // 6-month and YoY rate of change answer "are earnings actually growing under the
 // multiple?" — a timing-relevant signal, unlike valuation level.
-async function loadEpsMomentum(db) {
+async function loadEpsMomentum(db, asOf = null) {
   try {
     const { results } = await db.prepare(
-      `SELECT date, eps FROM sp500_eps WHERE eps IS NOT NULL ORDER BY date DESC LIMIT 14`
+      `SELECT date, eps FROM sp500_eps WHERE eps IS NOT NULL${asOf ? ` AND date <= '${asOf}'` : ''} ORDER BY date DESC LIMIT 14`
     ).all();
     if (!results || results.length < 7) return null;
     const latest     = results[0].eps;
@@ -889,14 +890,15 @@ async function loadEpsMomentum(db) {
 // ── HORIZON: HISTORICAL PERCENTILE ────────────────────────────────────────────
 // Returns { value, pct } where pct (0–1) is the fraction of history <= current.
 // table/col are internal constants (never user input) — safe to interpolate.
-async function loadPercentile(db, table, col) {
+async function loadPercentile(db, table, col, asOf = null) {
   try {
+    const cut = asOf ? ` AND date <= '${asOf}'` : '';
+    const cur = `(SELECT ${col} FROM ${table} WHERE ${col} IS NOT NULL${cut} ORDER BY date DESC LIMIT 1)`;
     const sql =
       `SELECT
-         (SELECT ${col} FROM ${table} WHERE ${col} IS NOT NULL ORDER BY date DESC LIMIT 1) AS current,
-         CAST((SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL AND ${col} <=
-             (SELECT ${col} FROM ${table} WHERE ${col} IS NOT NULL ORDER BY date DESC LIMIT 1)) AS REAL)
-           / (SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL) AS pct`;
+         ${cur} AS current,
+         CAST((SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL${cut} AND ${col} <= ${cur}) AS REAL)
+           / (SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL${cut}) AS pct`;
     const { results } = await db.prepare(sql).all();
     const r = results?.[0];
     if (!r || r.current == null) return null;
@@ -907,10 +909,10 @@ async function loadPercentile(db, table, col) {
 // ── HORIZON: FRED SERIES ──────────────────────────────────────────────────────
 // Most-recent-first observations for a FRED series stored in D1 (Phase 2 table).
 // Returns [] if the table does not yet exist so Phase 1 degrades gracefully.
-async function loadFredSeries(db, seriesId, limit = 250) {
+async function loadFredSeries(db, seriesId, limit = 250, asOf = null) {
   try {
     const { results } = await db.prepare(
-      `SELECT date, value FROM fred_series WHERE series_id = ? ORDER BY date DESC LIMIT ?`
+      `SELECT date, value FROM fred_series WHERE series_id = ?${asOf ? ` AND date <= '${asOf}'` : ''} ORDER BY date DESC LIMIT ?`
     ).bind(seriesId, limit).all();
     return results ?? [];
   } catch { return []; }
@@ -2178,9 +2180,62 @@ function buildAggregate(cards) {
 }
 
 // ── HANDLER ───────────────────────────────────────────────────────────────────
+// Assemble the valn/fred bundles from raw loader outputs and compute the horizons.
+// Shared by the live handler and the as-of backfill so they stay identical.
+function computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries) {
+  const valn = {
+    cape:    capeP?.value,    capePct:    capeP?.pct,
+    buffett: buffettP?.value, buffettPct: buffettP?.pct,
+    fwdPe:   fwdPeP?.value,   fwdPePct:   fwdPeP?.pct,
+    epsYoy:  epsMom?.yoy ?? null,
+  };
+  // Fed funds direction from DFEDTARU: hiking = tightening = more structural risk.
+  let fedFundsRisk = null, fedFundsDir = null;
+  if (fedFundsSeries && fedFundsSeries.length >= 2) {
+    const cur = fedFundsSeries[0].value;
+    const prev = fedFundsSeries[fedFundsSeries.length - 1].value;
+    if (cur > prev)      { fedFundsRisk = 0.75; fedFundsDir = 'Hiking'; }
+    else if (cur < prev) { fedFundsRisk = 0.25; fedFundsDir = 'Cutting'; }
+    else                 { fedFundsRisk = 0.5;  fedFundsDir = 'On Hold'; }
+  }
+  const fred = { oas: oasSeries, realYield: realYieldSeries?.[0]?.value ?? null, fedFundsRisk, fedFundsDir };
+  return buildHorizons(q, breadthData, valn, fred);
+}
+
+// Horizons-only, as-of a past date, for the Historical Scorecard backfill.
+// Token-gated in the handler. Pure D1 (no Yahoo fallback).
+async function horizonsAsOf(db, asOf) {
+  const [q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries] = await Promise.all([
+    loadFromD1(db, asOf),
+    loadBreadthLatest(db, asOf),
+    loadPercentile(db, 'shiller_data', 'cape', asOf),
+    loadPercentile(db, 'buffett_data', 'ratio', asOf),
+    loadPercentile(db, 'forward_pe_data', 'pe', asOf),
+    loadEpsMomentum(db, asOf),
+    loadFredSeries(db, 'BAMLH0A0HYM2', 250, asOf),
+    loadFredSeries(db, 'DFII10', 5, asOf),
+    loadFredSeries(db, 'DFEDTARU', 60, asOf),
+  ]);
+  const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries);
+  return new Response(JSON.stringify({ asOf, source: 'd1', horizons }), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  });
+}
+
 export async function onRequest(context) {
   if (context.request.method === 'OPTIONS') {
     return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET' } });
+  }
+
+  // Historical Scorecard backfill: ?asOf=YYYY-MM-DD returns horizons computed as-of
+  // that date (token-gated). Live scoring (no asOf) is unaffected below.
+  const asOfParam = new URL(context.request.url).searchParams.get('asOf');
+  if (asOfParam) {
+    const jerr = (m, s) => new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfParam)) return jerr('bad asOf (expect YYYY-MM-DD)', 400);
+    if (context.request.headers.get('X-Hub-Token') !== context.env.HUB_TOKEN) return jerr('Unauthorized', 401);
+    if (!context.env.DB) return jerr('D1 not configured', 500);
+    return horizonsAsOf(context.env.DB, asOfParam);
   }
 
   // Try D1 first; fall back to Yahoo Finance for any symbol not found in D1 or stale
@@ -2305,27 +2360,7 @@ export async function onRequest(context) {
   agg.scoreDirection = scoreDirection;
 
   // ── HORIZON SCORES ─────────────────────────────────────────────────────────
-  const valn = {
-    cape:    capeP?.value,    capePct:    capeP?.pct,
-    buffett: buffettP?.value, buffettPct: buffettP?.pct,
-    fwdPe:   fwdPeP?.value,   fwdPePct:   fwdPeP?.pct,
-    epsYoy:  epsMom?.yoy ?? null,
-  };
-  // Fed funds direction from DFEDTARU: hiking = tightening = more structural risk.
-  let fedFundsRisk = null, fedFundsDir = null;
-  if (fedFundsSeries && fedFundsSeries.length >= 2) {
-    const cur = fedFundsSeries[0].value;
-    const prev = fedFundsSeries[fedFundsSeries.length - 1].value;
-    if (cur > prev)      { fedFundsRisk = 0.75; fedFundsDir = 'Hiking'; }
-    else if (cur < prev) { fedFundsRisk = 0.25; fedFundsDir = 'Cutting'; }
-    else                 { fedFundsRisk = 0.5;  fedFundsDir = 'On Hold'; }
-  }
-  const fred = {
-    oas:          oasSeries,
-    realYield:    realYieldSeries?.[0]?.value ?? null,
-    fedFundsRisk, fedFundsDir,
-  };
-  const horizons = buildHorizons(q, breadthData, valn, fred);
+  const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries);
 
   const body = JSON.stringify({
     timestamp: new Date().toISOString(),
