@@ -152,6 +152,11 @@ async function runRefresh(env) {
   const snap = await callHub(`${siteUrl}/api/score-snapshot`, hubToken);
   console.log(`[data-refresh] score-snapshot done — ${snap.error ? 'error: ' + snap.error : snap.skipped ? 'skipped: ' + snap.reason : 'stored ' + snap.stored?.date + ' → ' + snap.stored?.speedometer + '/' + snap.stored?.compass + '/' + snap.stored?.anchor}`);
 
+  // Weekly brief theme for the Historical Scorecard (the endpoint self-gates to ~once/week).
+  console.log(`[data-refresh] running brief-theme`);
+  const theme = await callHub(`${siteUrl}/api/brief-theme`, hubToken);
+  console.log(`[data-refresh] brief-theme — ${theme.error ? 'error: ' + theme.error : theme.skipped ? 'skipped: ' + theme.skipped : 'theme: ' + (theme.theme || '?')}`);
+
   // Health check — email an alert only on a real failure (status 'error':
   // D1 unreachable or mass staleness). 'warning' covers benign, expected gaps
   // (market holidays, a stray missing ticker) and must not spam the inbox.
