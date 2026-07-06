@@ -1845,6 +1845,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: mob ? '16px 10px 40px' : '30px 28px 60px', display: 'flex', flexDirection: 'column', gap: mob ? 14 : 22 }}>
       {D.horizons ? <HorizonHero horizons={D.horizons} exec={D.exec} /> : <BreadthBar exec={D.exec} cats={D.categories} groups={D.groups} cards={D.cards} />}
+      {D.horizons && <ScoreHistoryChart />}
       {D.groups.map((g) => (
         <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', paddingLeft: 2 }}>{g.label}</span>
