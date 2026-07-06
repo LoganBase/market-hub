@@ -420,11 +420,20 @@ function abbrevSector(s) {
 function BriefDayPopover({ brief, rect }) {
   const sc       = brief.sentiment >= 2 ? '#22c55e' : brief.sentiment <= -2 ? '#ef4444' : '#f59e0b';
   const dateLabel = new Date(brief.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const W        = 290;
-  const left     = Math.min(Math.max(rect.left + rect.width / 2 - W / 2, 8), (window.innerWidth || 1200) - W - 8);
-  const top      = rect.top - 10;
+  const vw       = window.innerWidth || 1200;
+  const vh       = window.innerHeight || 800;
+  const mob      = vw < 768;
+  const W        = Math.min(290, vw - 20);
+  const estH     = 58 + (brief.bullets || []).length * 22; // rough height for the flip decision
+  // Horizontal: center on mobile so it never runs off a side; clamp to viewport on desktop.
+  const left     = mob ? Math.round((vw - W) / 2)
+                       : Math.min(Math.max(rect.left + rect.width / 2 - W / 2, 10), vw - W - 10);
+  // Vertical: sit above the cell if there's room, otherwise flip below — never clips top/bottom.
+  const above    = rect.top >= estH + 14;
+  const top      = above ? rect.top - 10 : rect.bottom + 10;
   return (
-    <div style={{ position: 'fixed', left, top, transform: 'translateY(-100%)', zIndex: 9999, width: W,
+    <div style={{ position: 'fixed', left, top, transform: above ? 'translateY(-100%)' : 'none', zIndex: 9999, width: W,
+      maxHeight: vh - 20, overflowY: 'auto',
       background: '#0d1520', border: '1px solid #28384a', borderLeft: `3px solid ${sc}`,
       borderRadius: 10, padding: '12px 14px', boxShadow: '0 8px 32px rgba(0,0,0,.65)', pointerEvents: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
