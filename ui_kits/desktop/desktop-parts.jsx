@@ -949,12 +949,14 @@ function InteractionMatrix({ matrix }) {
   );
 }
 
-function HorizonHero({ horizons, exec }) {
+function HorizonHero({ horizons, exec, onOpen }) {
   const mob = useIsMobileD();
   if (!horizons) return null;
   const { speedometer, compass, anchor, matrix } = horizons;
+  const QC = { 'add-risk': '#22c55e', 'bear-rally': '#f59e0b', 'accumulate': '#60a5fa', 'risk-off': '#ef4444' };
+  const qc = QC[matrix?.quadrant] || '#64748b';
   return (
-    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 18, padding: mob ? '16px 16px' : '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div onClick={onOpen} style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 18, padding: mob ? '16px 16px' : '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, cursor: onOpen ? 'pointer' : 'default' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#94a3b8' }}>Market Regime — Three Horizons</span>
         <div style={{ flex: 1, height: 1, background: '#1e2d3d' }} />
@@ -965,7 +967,14 @@ function HorizonHero({ horizons, exec }) {
         <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} />
         <AnchorDial anchor={anchor} />
       </div>
-      <InteractionMatrix matrix={matrix} />
+      {matrix && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 12, background: `${qc}14`, border: `1px solid ${qc}38` }}>
+          <span style={{ width: 9, height: 9, borderRadius: '50%', background: qc, boxShadow: `0 0 7px ${qc}`, flexShrink: 0 }} />
+          <span style={{ fontFamily: DSANS, fontSize: 14, fontWeight: 700, color: qc }}>{matrix.label}</span>
+          <span style={{ fontFamily: DSANS, fontSize: 12.5, color: '#94a3b8' }}>· size {Math.round((matrix.sizingFactor ?? 1) * 100)}% of normal</span>
+          {onOpen && <span style={{ marginLeft: 'auto', fontFamily: DSANS, fontSize: 11.5, fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap' }}>Matrix &amp; history →</span>}
+        </div>
+      )}
       {exec && exec.regimeBearish && (
         <div style={{ borderTop: '1px solid #2d1a00', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px #f59e0b', flexShrink: 0 }} />
@@ -986,6 +995,20 @@ function HorizonHero({ horizons, exec }) {
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+// Market Summary detail (the drill-in): the hero + the full Speedometer x Compass
+// matrix + the Score History chart. Rendered by the Workspace Exec Summary detail
+// and the Glance market-summary page; keeps the landing hero itself lean.
+function MarketSummaryDetail({ horizons, exec }) {
+  if (!horizons) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <HorizonHero horizons={horizons} exec={exec} />
+      <InteractionMatrix matrix={horizons.matrix} />
+      <ScoreHistoryChart />
     </div>
   );
 }

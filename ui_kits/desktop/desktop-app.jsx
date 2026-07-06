@@ -1627,8 +1627,7 @@ function OptionWorkspace({ D }) {
               <span style={{ fontFamily: DSANS, fontSize: 25, fontWeight: 700, color: '#e8edf5' }}>Market Summary</span>
               <span style={{ marginLeft: 'auto', fontFamily: DMONO, fontSize: 12, color: '#64748b' }}>As of {D.asOf}</span>
             </div>
-            <HorizonHero horizons={D.horizons} exec={D.exec} />
-            <div style={{ marginTop: 16 }}><ScoreHistoryChart /></div>
+            <MarketSummaryDetail horizons={D.horizons} exec={D.exec} />
           </div>
         ) : (
           <div style={{ maxWidth: 820, margin: '0 auto' }}>
@@ -1826,6 +1825,21 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
     if (open === 'macro-brief') {
       return <MacroBriefDeepDive onBack={() => setOpen(null)} />;
     }
+    if (open === 'market-summary') {
+      return (
+        <div style={{ maxWidth: 920, margin: '0 auto', padding: '24px 32px 60px' }}>
+          <button onClick={() => setOpen(null)} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 9, padding: '9px 15px', borderRadius: 10, background: '#0d1520', border: '1px solid #1e2d3d', marginBottom: 22 }}>
+            <svg width="8" height="13" viewBox="0 0 8 13"><path d="M6.5 1L1.5 6.5l5 5.5" stroke="#94a3b8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span style={{ fontFamily: DSANS, fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>All signals</span>
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 20 }}>
+            <span style={{ fontFamily: DSANS, fontSize: 26, fontWeight: 700, color: '#e8edf5' }}>Market Summary</span>
+            <span style={{ marginLeft: 'auto', fontFamily: DMONO, fontSize: 12, color: '#64748b' }}>As of {D.asOf}</span>
+          </div>
+          <MarketSummaryDetail horizons={D.horizons} exec={D.exec} />
+        </div>
+      );
+    }
     const card = D.cards[open];
     return (
       <div style={{ maxWidth: 920, margin: '0 auto', padding: '24px 32px 60px' }}>
@@ -1844,8 +1858,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
   }
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: mob ? '16px 10px 40px' : '30px 28px 60px', display: 'flex', flexDirection: 'column', gap: mob ? 14 : 22 }}>
-      {D.horizons ? <HorizonHero horizons={D.horizons} exec={D.exec} /> : <BreadthBar exec={D.exec} cats={D.categories} groups={D.groups} cards={D.cards} />}
-      {D.horizons && <ScoreHistoryChart />}
+      {D.horizons ? <HorizonHero horizons={D.horizons} exec={D.exec} onOpen={() => setOpen('market-summary')} /> : <BreadthBar exec={D.exec} cats={D.categories} groups={D.groups} cards={D.cards} />}
       {D.groups.map((g) => (
         <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', paddingLeft: 2 }}>{g.label}</span>
