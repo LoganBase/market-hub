@@ -950,16 +950,17 @@ function InteractionMatrix({ matrix }) {
 }
 
 function HorizonHero({ horizons, exec }) {
+  const mob = useIsMobileD();
   if (!horizons) return null;
   const { speedometer, compass, anchor, matrix } = horizons;
   return (
-    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 18, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 18, padding: mob ? '16px 16px' : '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#94a3b8' }}>Market Regime — Three Horizons</span>
         <div style={{ flex: 1, height: 1, background: '#1e2d3d' }} />
         <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>tactical · trend · structural</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
         <HorizonDial title="Tactical Speedometer" horizon={speedometer.horizon || '2–3 weeks'} score={speedometer.score} level={speedometer.level} trigger={speedometer.trigger} veto={speedometer.veto} vixRatio={speedometer.vixRatio} />
         <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} />
         <AnchorDial anchor={anchor} />
