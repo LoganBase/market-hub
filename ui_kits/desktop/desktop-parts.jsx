@@ -3,6 +3,18 @@
 // v20260626
 const { useState: useStateD, useEffect: useEffectD, useRef: useRefD } = React;
 
+// Narrow-screen flag for responsive deep-dive layout (phones/portrait).
+function useIsMobileD() {
+  const [m, setM] = useStateD(window.innerWidth < 768);
+  useEffectD(() => {
+    const h = () => setM(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    window.addEventListener('orientationchange', h);
+    return () => { window.removeEventListener('resize', h); window.removeEventListener('orientationchange', h); };
+  }, []);
+  return m;
+}
+
 const DSIG = {
   bullish: { c: '#22c55e', glow: 'rgba(34,197,94,.35)', fill: 'rgba(34,197,94,.12)', line: 'rgba(34,197,94,.25)', word: 'BULLISH' },
   neutral: { c: '#f59e0b', glow: 'rgba(245,158,11,.35)', fill: 'rgba(245,158,11,.10)', line: 'rgba(245,158,11,.20)', word: 'NEUTRAL' },
@@ -531,9 +543,10 @@ function SparkD({ seed, trend, color, w = 72, h = 26 }) {
 function StatBoxes({ stats }) {
   if (!stats || !stats.length) return null;
   const [hoveredIdx, setHoveredIdx] = useStateD(null);
+  const mob = useIsMobileD();
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)`, gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${mob ? Math.min(stats.length, 2) : stats.length}, 1fr)`, gap: 10 }}>
       {stats.map((st, i) => {
         const tone        = st[3] === 'pos' ? '#22c55e' : st[3] === 'neg' ? '#ef4444' : '#f59e0b';
         const extended    = st[4] != null;
@@ -593,20 +606,21 @@ function StatBoxes({ stats }) {
 function IndicatorTable({ rows, indicatorWidth = 285, signalDescriptions = null, hoverDescriptions = null, icons = null, showSectorWeights = false }) {
   if (!rows || !rows.length) return null;
   const [hoveredIdx, setHoveredIdx] = useStateD(null);
+  const mob = useIsMobileD();
   // suppress 200d column for sectors — replaced by S&P Wt. + Wtd Impact columns
   const has200d = !showSectorWeights && rows.some(r => r[5] != null);
   const hdrS = { fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#8295a9' };
   const iconSlot = icons ? 20 : 9;
   return (
-    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 14, padding: '4px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 0 7px', borderBottom: '1px solid #1e2d3d' }}>
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 14, padding: mob ? '4px 12px' : '4px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 14, padding: '8px 0 7px', borderBottom: '1px solid #1e2d3d' }}>
         <span style={{ width: iconSlot, flexShrink: 0 }} />
-        <span style={{ ...hdrS, width: 175, flexShrink: 0 }}>Signal</span>
+        <span style={{ ...hdrS, width: mob ? 104 : 175, flexShrink: 0 }}>Signal</span>
         <span style={{ ...hdrS, flex: 1 }}>Condition</span>
-        <span style={{ ...hdrS, width: 80, textAlign: 'right', flexShrink: 0 }}>{showSectorWeights ? 'Rel Perf' : 'Value'}</span>
-        {has200d && <span style={{ ...hdrS, width: 80, textAlign: 'right', flexShrink: 0 }}>200d</span>}
-        {showSectorWeights && <span style={{ ...hdrS, width: 60, textAlign: 'right', flexShrink: 0 }}>S&P Wt.</span>}
-        {showSectorWeights && <span style={{ ...hdrS, width: 84, textAlign: 'right', flexShrink: 0 }}>Wtd Impact</span>}
+        <span style={{ ...hdrS, width: mob ? 58 : 80, textAlign: 'right', flexShrink: 0 }}>{showSectorWeights ? 'Rel Perf' : 'Value'}</span>
+        {has200d && !mob && <span style={{ ...hdrS, width: 80, textAlign: 'right', flexShrink: 0 }}>200d</span>}
+        {showSectorWeights && !mob && <span style={{ ...hdrS, width: 60, textAlign: 'right', flexShrink: 0 }}>S&P Wt.</span>}
+        {showSectorWeights && !mob && <span style={{ ...hdrS, width: 84, textAlign: 'right', flexShrink: 0 }}>Wtd Impact</span>}
       </div>
       {rows.map((r, i) => {
         const rs        = DSIG[r[3]] || DSIG.neutral;
@@ -640,7 +654,7 @@ function IndicatorTable({ rows, indicatorWidth = 285, signalDescriptions = null,
           : r[1];
         return (
           <div key={i}
-            style={{ display: 'flex', alignItems: 'center', gap: 14, borderBottom: i < rows.length - 1 ? '1px solid #16202e' : 'none', cursor: whyText ? 'default' : undefined, transition: 'background .15s', borderRadius: 6, margin: '0 -4px', padding: isHovered ? '13px 4px' : '13px 4px', background: isHovered ? 'rgba(42,63,87,0.25)' : 'transparent' }}
+            style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 14, borderBottom: i < rows.length - 1 ? '1px solid #16202e' : 'none', cursor: whyText ? 'default' : undefined, transition: 'background .15s', borderRadius: 6, margin: '0 -4px', padding: isHovered ? '13px 4px' : '13px 4px', background: isHovered ? 'rgba(42,63,87,0.25)' : 'transparent' }}
             onMouseEnter={() => whyText && setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}>
             {icons && icons[i]
@@ -654,7 +668,7 @@ function IndicatorTable({ rows, indicatorWidth = 285, signalDescriptions = null,
               </div>
             ) : (
               <>
-                <div style={{ width: 175, flexShrink: 0 }}>
+                <div style={{ width: mob ? 104 : 175, flexShrink: 0 }}>
                   <div style={{ fontFamily: DSANS, fontSize: 14, fontWeight: 600, color: '#e8edf5' }}>{r[0]}</div>
                   {r[4] && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b', marginTop: 2 }}>{r[4]}</div>}
                 </div>
@@ -662,9 +676,9 @@ function IndicatorTable({ rows, indicatorWidth = 285, signalDescriptions = null,
                   <div style={{ fontFamily: DSANS, fontSize: 12.5, color: '#94a3b8' }}>{r[2]}</div>
                   {desc && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#4a5f73', marginTop: 3 }}>{desc}</div>}
                 </div>
-                <span style={{ fontFamily: DMONO, fontSize: 13, fontWeight: 600, color: rs.c, width: 80, textAlign: 'right', flexShrink: 0, whiteSpace: 'pre-line', lineHeight: 1.5 }}>{valueDisplay}</span>
-                {sma200El}
-                {sectorWtEl}
+                <span style={{ fontFamily: DMONO, fontSize: 13, fontWeight: 600, color: rs.c, width: mob ? 58 : 80, textAlign: 'right', flexShrink: 0, whiteSpace: 'pre-line', lineHeight: 1.5 }}>{valueDisplay}</span>
+                {!mob && sma200El}
+                {!mob && sectorWtEl}
               </>
             )}
           </div>
@@ -1010,6 +1024,7 @@ function SectorRRG() {
   const [hidden,    setHidden]    = useStateD({});
   const [hovLegend, setHovLegend] = useStateD(null);
   const svgRef = useRefD(null);
+  const mob = useIsMobileD();
 
   useEffectD(() => {
     let alive = true;
@@ -1071,7 +1086,7 @@ function SectorRRG() {
         </div>
       </div>
       <div style={{ position: 'relative' }}>
-        <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', height: H }}>
+        <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', height: mob ? 'auto' : H }}>
           {/* Quadrant fills */}
           <rect x={PAD.l} y={PAD.t} width={cx100 - PAD.l} height={cy100 - PAD.t} fill="rgba(96,165,250,0.04)" />
           <rect x={cx100} y={PAD.t} width={PAD.l + PW - cx100} height={cy100 - PAD.t} fill="rgba(74,222,128,0.04)" />
@@ -1278,6 +1293,7 @@ const CT_FLAG = {
 };
 function CountryTable({ details }) {
   if (!details || !details.length) return null;
+  const mob = useIsMobileD();
   const groupOrder = [];
   const groupMap = {};
   details.forEach((d) => {
@@ -1286,7 +1302,7 @@ function CountryTable({ details }) {
   });
   const groups = groupOrder.map((g) => ({ group: g, items: groupMap[g] }));
   return (
-    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 14, padding: '0 18px' }}>
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 14, padding: mob ? '0 12px' : '0 18px' }}>
       {groups.map(({ group, items }, gi) => (
         <div key={group}>
           <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#94a3b8', padding: '10px 0 4px' }}>{group}</div>
@@ -1296,15 +1312,15 @@ function CountryTable({ details }) {
             const isLast = gi === groups.length - 1 && i === items.length - 1;
             const flagCode = CT_FLAG[d.sym];
             return (
-              <div key={d.sym} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '9px 0', borderBottom: isLast ? 'none' : '1px solid #16202e' }}>
+              <div key={d.sym} style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 14, padding: '9px 0', borderBottom: isLast ? 'none' : '1px solid #16202e' }}>
                 {flagCode
                   ? <img src={`/assets/flags/${flagCode}.svg`} alt={flagCode} style={{ width: 24, height: 16, borderRadius: 2, objectFit: 'cover', border: `1px solid ${c}44`, flexShrink: 0, boxShadow: `0 0 4px ${glow}` }} />
                   : <span style={{ width: 24, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${glow}` }} /></span>
                 }
                 <span style={{ fontFamily: DSANS, fontSize: 13.5, color: '#e8edf5', flex: 1 }}>{d.label}</span>
-                <span style={{ fontFamily: DMONO, fontSize: 11, color: '#64748b', width: 56, textAlign: 'right', flexShrink: 0 }}>{d.sym}</span>
-                <span style={{ fontFamily: DMONO, fontSize: 12, color: '#94a3b8', width: 72, textAlign: 'right', flexShrink: 0 }}>{d.value}</span>
-                <span style={{ fontFamily: DMONO, fontSize: 13, fontWeight: 600, color: c, width: 72, textAlign: 'right', flexShrink: 0 }}>{d.vs200}</span>
+                {!mob && <span style={{ fontFamily: DMONO, fontSize: 11, color: '#64748b', width: 56, textAlign: 'right', flexShrink: 0 }}>{d.sym}</span>}
+                <span style={{ fontFamily: DMONO, fontSize: 12, color: '#94a3b8', width: mob ? 58 : 72, textAlign: 'right', flexShrink: 0 }}>{d.value}</span>
+                <span style={{ fontFamily: DMONO, fontSize: 13, fontWeight: 600, color: c, width: mob ? 58 : 72, textAlign: 'right', flexShrink: 0 }}>{d.vs200}</span>
               </div>
             );
           })}
