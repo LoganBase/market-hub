@@ -1,2 +1,4 @@
 /v2/*         /   302
 /market-hub/* /   302
+/mobile/*     /   301
+/mobile       /   301
