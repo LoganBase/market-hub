@@ -1476,9 +1476,9 @@ function OptionWorkspace({ D }) {
   const showRail = twoPane || !detailOpen;
   const showDetail = twoPane || detailOpen;
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 58px)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: twoPane ? 'calc(100vh - 58px)' : 'auto', overflow: twoPane ? 'hidden' : 'visible' }}>
       {/* left rail */}
-      <div style={{ display: showRail ? 'block' : 'none', width: twoPane ? 340 : '100%', flexShrink: 0, borderRight: twoPane ? '1px solid #16202e' : 'none', background: '#0a0f17', overflowY: 'auto', padding: '20px 16px' }}>
+      <div style={{ display: showRail ? 'block' : 'none', width: twoPane ? 340 : '100%', flexShrink: 0, borderRight: twoPane ? '1px solid #16202e' : 'none', background: '#0a0f17', overflowY: twoPane ? 'auto' : 'visible', padding: '20px 16px' }}>
         <div style={{ padding: '4px 8px 18px', borderBottom: '1px solid #16202e', marginBottom: 16 }}>
           {/* Row 1: three-horizon strip — click opens the full market summary (rich Glance hero) */}
           {D.horizons && (
@@ -1601,7 +1601,7 @@ function OptionWorkspace({ D }) {
         <MacroBriefWorkspacePanel onClick={() => goTo('macro-brief')} active={sel === 'macro-brief'} />
       </div>
       {/* right deep-dive */}
-      <div style={{ display: showDetail ? 'block' : 'none', flex: 1, overflowY: 'scroll', padding: (sel === 'daily-brief' || sel === 'macro-brief') ? '0' : (twoPane ? '28px 36px 60px' : '8px 14px 40px') }}>
+      <div style={{ display: showDetail ? 'block' : 'none', flex: 1, overflowY: twoPane ? 'scroll' : 'visible', padding: (sel === 'daily-brief' || sel === 'macro-brief') ? '0' : (twoPane ? '28px 36px 60px' : '8px 14px 40px') }}>
         {!twoPane && detailOpen && sel !== 'daily-brief' && sel !== 'macro-brief' && (
           <button onClick={backToList} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 4px 14px' }}>
             <svg width="8" height="13" viewBox="0 0 8 13"><path d="M6.5 1L1.5 6.5l5 5.5" stroke="#94a3b8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
