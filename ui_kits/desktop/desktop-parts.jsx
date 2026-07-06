@@ -1106,7 +1106,7 @@ function ScoreHistoryChart() {
           ))}
           <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', height: svgH }}
             onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
-            {bands.map((b, i) => <rect key={i} x={b.x0} y={PAD.t} width={Math.max(b.x1 - b.x0, 0.5)} height={PH} fill={b.color} opacity="0.10" />)}
+            {bands.map((b, i) => <rect key={i} x={b.x0} y={PAD.t} width={Math.max(b.x1 - b.x0, 0.5)} height={PH} fill={b.color} opacity="0.14" />)}
             {[2.5, 5, 7.5].map(g => <line key={g} x1={PAD.l} y1={Y(g)} x2={W - PAD.r} y2={Y(g)} stroke="#1e2d3d" strokeWidth="0.6" strokeDasharray={g === 5 ? '0' : '3 5'} opacity={g === 5 ? 0.7 : 0.4} vectorEffect="non-scaling-stroke" />)}
             {SERIES.map(s => <path key={s.key} d={linePath(s.key)} fill="none" stroke={s.color} strokeWidth={s.faint ? 1.1 : 1.7} strokeLinejoin="round" strokeLinecap="round" opacity={s.faint ? 0.5 : 1} strokeDasharray={s.faint ? '4 3' : '0'} vectorEffect="non-scaling-stroke" />)}
             {hv != null && <line x1={X(hv)} y1={PAD.t} x2={X(hv)} y2={PAD.t + PH} stroke="#64748b" strokeWidth="0.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
@@ -1144,16 +1144,17 @@ function ScoreHistoryChart() {
           )}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.04em', color: '#8295a9' }}>Regime shading</span>
         {Object.entries(QLAB).map(([q, lab]) => (
           <div key={q} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: QC[q], opacity: 0.5, flexShrink: 0 }} />
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: QC[q], opacity: 0.65, flexShrink: 0 }} />
             <span style={{ fontFamily: DSANS, fontSize: 10, color: '#64748b' }}>{lab}</span>
           </div>
         ))}
       </div>
       <p style={{ fontFamily: DSANS, fontSize: 10.5, color: '#475569', margin: '8px 0 0', lineHeight: 1.5 }}>
-        Background shading = the Speedometer × Compass regime that day. History is recomputed with the current scoring framework applied to past data.
+        Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
       </p>
     </div>
   );
