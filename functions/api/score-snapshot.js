@@ -50,7 +50,9 @@ export async function onRequest(context) {
   }
 
   const h = scores?.horizons;
-  if (!h || scores.source !== 'd1') {
+  // Store when the horizons are D1-backed ('d1' or 'd1+yahoo'); skip only a pure
+  // 'yahoo' fallback (D1 down), which would produce degraded scores.
+  if (!h || !String(scores.source || '').includes('d1')) {
     return new Response(JSON.stringify({ skipped: true, reason: `no horizons or source=${scores?.source ?? 'none'}` }), { headers: CORS });
   }
 
