@@ -1628,6 +1628,7 @@ function OptionWorkspace({ D }) {
               <span style={{ marginLeft: 'auto', fontFamily: DMONO, fontSize: 12, color: '#64748b' }}>As of {D.asOf}</span>
             </div>
             <HorizonHero horizons={D.horizons} exec={D.exec} />
+            <div style={{ marginTop: 16 }}><ScoreHistoryChart /></div>
           </div>
         ) : (
           <div style={{ maxWidth: 820, margin: '0 auto' }}>

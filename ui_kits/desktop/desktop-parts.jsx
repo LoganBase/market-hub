@@ -990,6 +990,141 @@ function HorizonHero({ horizons, exec }) {
   );
 }
 
+// ── Historical Scorecard — the three horizon scores over time, with the
+// Speedometer×Compass regime shaded behind them. Fetches /api/score-history.
+function ScoreHistoryChart() {
+  const [range, setRange]     = useStateD('1y');
+  const [data,  setData]      = useStateD(null);
+  const [hoverIdx, setHover]  = useStateD(null);
+  const [noData, setNoData]   = useStateD(false);
+  const mob    = useIsMobileD();
+  const svgRef = useRefD(null);
+
+  useEffectD(() => {
+    let alive = true; setData(null); setNoData(false);
+    fetch(`/api/score-history?range=${range}`).then(r => r.json())
+      .then(d => { if (!alive) return; (d.dates && d.dates.length >= 2) ? setData(d) : setNoData(true); })
+      .catch(() => { if (alive) setNoData(true); });
+    return () => { alive = false; };
+  }, [range]);
+
+  const RANGES = [['3m','3M'],['6m','6M'],['1y','1Y'],['2y','2Y'],['all','All']];
+  const QC   = { 'add-risk': '#22c55e', 'bear-rally': '#f59e0b', 'accumulate': '#60a5fa', 'risk-off': '#ef4444' };
+  const QLAB = { 'add-risk': 'Add Risk', 'bear-rally': 'Bear Rally', 'accumulate': 'Accumulate', 'risk-off': 'Risk-Off' };
+  const SERIES = [
+    { key: 'speedometer', label: 'Speedometer', color: '#a855f7' },
+    { key: 'compass',     label: 'Compass',     color: '#22d3ee' },
+    { key: 'anchor',      label: 'Anchor',      color: '#94a3b8', faint: true },
+  ];
+
+  const W = 760, H = 240, PAD = { t: 10, r: 8, b: 8, l: 8 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const n = data ? data.dates.length : 0;
+  const X = (i) => PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * PW);
+  const Y = (v) => PAD.t + (1 - (v == null ? 0 : v) / 10) * PH;
+  const svgH = mob ? 190 : 230;
+
+  const bands = [];
+  if (data) {
+    let start = 0;
+    for (let i = 1; i <= n; i++) {
+      if (i === n || data.quadrants[i] !== data.quadrants[start]) {
+        const qd = data.quadrants[start];
+        if (qd) bands.push({ x0: X(start), x1: X(Math.min(i, n - 1)), color: QC[qd] || '#334155' });
+        start = i;
+      }
+    }
+  }
+  const linePath = (key) => {
+    let d = '', pen = false;
+    for (let i = 0; i < n; i++) {
+      const v = data[key][i];
+      if (v == null) { pen = false; continue; }
+      d += `${pen ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)} `; pen = true;
+    }
+    return d;
+  };
+  const onMove = (e) => {
+    if (!data || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const i = Math.round((((e.clientX - rect.left) / rect.width) * W - PAD.l) / PW * (n - 1));
+    setHover(Math.max(0, Math.min(n - 1, i)));
+  };
+  const hv = (hoverIdx != null && data) ? hoverIdx : null;
+  const right = hv != null && (X(hv) / W) > 0.6;
+
+  return (
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 16, padding: mob ? '14px 12px' : '18px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#94a3b8' }}>Score History</span>
+        {!mob && <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>— how the three horizons evolved</span>}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          {RANGES.map(([r, lab]) => (
+            <button key={r} onClick={() => setRange(r)} style={{ all: 'unset', cursor: 'pointer', padding: '3px 9px', borderRadius: 6,
+              fontFamily: DMONO, fontSize: 11, fontWeight: 600, color: r === range ? '#e8edf5' : '#64748b',
+              background: r === range ? '#1b2736' : 'transparent', border: `1px solid ${r === range ? '#28384a' : 'transparent'}` }}>{lab}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
+        {SERIES.map(s => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 16, height: 3, borderRadius: 2, background: s.color, opacity: s.faint ? 0.55 : 1, display: 'inline-block' }} />
+            <span style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8' }}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+      {noData && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Not enough history yet — accrues nightly.</div>}
+      {!data && !noData && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Loading…</div>}
+      {data && (
+        <div style={{ position: 'relative' }}>
+          {[10, 5, 0].map(g => (
+            <span key={g} style={{ position: 'absolute', left: 0, top: `${(Y(g) / H) * 100}%`, transform: 'translateY(-50%)', fontFamily: DMONO, fontSize: 9, color: '#475569', pointerEvents: 'none' }}>{g}</span>
+          ))}
+          <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', height: svgH }}
+            onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+            {bands.map((b, i) => <rect key={i} x={b.x0} y={PAD.t} width={Math.max(b.x1 - b.x0, 0.5)} height={PH} fill={b.color} opacity="0.10" />)}
+            {[2.5, 5, 7.5].map(g => <line key={g} x1={PAD.l} y1={Y(g)} x2={W - PAD.r} y2={Y(g)} stroke="#1e2d3d" strokeWidth="0.6" strokeDasharray={g === 5 ? '0' : '3 5'} opacity={g === 5 ? 0.7 : 0.4} vectorEffect="non-scaling-stroke" />)}
+            {SERIES.map(s => <path key={s.key} d={linePath(s.key)} fill="none" stroke={s.color} strokeWidth={s.faint ? 1.1 : 1.7} strokeLinejoin="round" strokeLinecap="round" opacity={s.faint ? 0.5 : 1} strokeDasharray={s.faint ? '4 3' : '0'} vectorEffect="non-scaling-stroke" />)}
+            {hv != null && <line x1={X(hv)} y1={PAD.t} x2={X(hv)} y2={PAD.t + PH} stroke="#64748b" strokeWidth="0.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
+            {hv != null && SERIES.map(s => data[s.key][hv] != null && <circle key={s.key} cx={X(hv)} cy={Y(data[s.key][hv])} r="3" fill={s.color} vectorEffect="non-scaling-stroke" />)}
+          </svg>
+          {hv != null && (
+            <div style={{ position: 'absolute', top: 2, [right ? 'right' : 'left']: `${(right ? (1 - X(hv) / W) : (X(hv) / W)) * 100}%`,
+              transform: `translateX(${right ? '-' : ''}8px)`, pointerEvents: 'none',
+              background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 148, boxShadow: '0 6px 20px rgba(0,0,0,.55)' }}>
+              <div style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, color: '#e8edf5', marginBottom: 5 }}>{data.dates[hv]}</div>
+              {SERIES.map(s => (
+                <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 2 }}>
+                  <span style={{ fontFamily: DSANS, fontSize: 10.5, color: s.color, opacity: s.faint ? 0.7 : 1 }}>{s.label}</span>
+                  <span style={{ fontFamily: DMONO, fontSize: 10.5, fontWeight: 600, color: '#cbd5e1' }}>{data[s.key][hv] ?? '—'}</span>
+                </div>
+              ))}
+              {data.quadrants[hv] && (
+                <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px solid #1e2d3d', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 2, background: QC[data.quadrants[hv]], flexShrink: 0 }} />
+                  <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#94a3b8' }}>{QLAB[data.quadrants[hv]]}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+        {Object.entries(QLAB).map(([q, lab]) => (
+          <div key={q} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: QC[q], opacity: 0.5, flexShrink: 0 }} />
+            <span style={{ fontFamily: DSANS, fontSize: 10, color: '#64748b' }}>{lab}</span>
+          </div>
+        ))}
+      </div>
+      <p style={{ fontFamily: DSANS, fontSize: 10.5, color: '#475569', margin: '8px 0 0', lineHeight: 1.5 }}>
+        Background shading = the Speedometer × Compass regime that day. History is recomputed with the current scoring framework applied to past data.
+      </p>
+    </div>
+  );
+}
+
 // Compact horizon strip for the 340px workspace rail.
 function HorizonRailMini({ horizons }) {
   if (!horizons) return null;
