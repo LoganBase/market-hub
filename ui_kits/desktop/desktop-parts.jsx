@@ -1115,7 +1115,7 @@ function ScoreHistoryChart() {
           {hv != null && (
             <div style={{ position: 'absolute', top: 2, [right ? 'right' : 'left']: `${(right ? (1 - X(hv) / W) : (X(hv) / W)) * 100}%`,
               transform: `translateX(${right ? '-' : ''}8px)`, pointerEvents: 'none',
-              background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 148, boxShadow: '0 6px 20px rgba(0,0,0,.55)' }}>
+              background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 148, maxWidth: 210, boxShadow: '0 6px 20px rgba(0,0,0,.55)' }}>
               <div style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, color: '#e8edf5', marginBottom: 5 }}>{data.dates[hv]}</div>
               {SERIES.map(s => (
                 <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 2 }}>
@@ -1127,6 +1127,17 @@ function ScoreHistoryChart() {
                 <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px solid #1e2d3d', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ width: 7, height: 7, borderRadius: 2, background: QC[data.quadrants[hv]], flexShrink: 0 }} />
                   <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#94a3b8' }}>{QLAB[data.quadrants[hv]]}</span>
+                </div>
+              )}
+              {data.themes && data.themes[hv] && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  <span style={{ fontFamily: DSANS, fontSize: 11, color: '#a855f7', flexShrink: 0 }}>✦</span>
+                  <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#c4b5fd', lineHeight: 1.4 }}>{data.themes[hv]}</span>
+                </div>
+              )}
+              {data.briefSentiment && data.briefSentiment[hv] != null && (
+                <div style={{ marginTop: 4, fontFamily: DSANS, fontSize: 9.5, color: '#64748b' }}>
+                  Brief: {data.briefSector[hv] || '—'} · {data.briefSentiment[hv] >= 0 ? '+' : ''}{data.briefSentiment[hv]}
                 </div>
               )}
             </div>

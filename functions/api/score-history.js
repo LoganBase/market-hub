@@ -55,6 +55,7 @@ export async function onRequest(context) {
     sizing:      results.map(r => r.sizing_factor),
     briefSentiment: results.map(r => r.brief_sentiment),
     briefSector:    results.map(r => r.brief_sector),
+    themes:         results.map(r => r.brief_theme),
     annotations,
     latest: results[results.length - 1] || null,
   }), { headers: cors });
