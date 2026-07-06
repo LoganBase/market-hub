@@ -104,3 +104,20 @@ CREATE TABLE IF NOT EXISTS fred_series (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fred_series ON fred_series (series_id, date DESC);
+
+-- Daily snapshot of the three horizon scores + matrix quadrant, for the
+-- Historical Scorecard chart. Written nightly by /api/score-snapshot (forward)
+-- and backfilled by seed/seed_score_history.py (as-of recompute). brief_theme is
+-- set by a weekly job and preserved across nightly score refreshes.
+CREATE TABLE IF NOT EXISTS score_history (
+  date            TEXT PRIMARY KEY,   -- YYYY-MM-DD (market data date)
+  speedometer     REAL,               -- Tactical Speedometer 0-10
+  compass         REAL,               -- Trend Compass 0-10
+  anchor          REAL,               -- Macro Anchor 0-10 (structural risk budget)
+  quadrant        TEXT,               -- add-risk | bear-rally | accumulate | risk-off
+  sizing_factor   REAL,               -- 0.70 / 0.85 / 1.0
+  brief_sentiment INTEGER,            -- -5..+5 from that day's Daily Brief
+  brief_sector    TEXT,               -- leading sector
+  brief_theme     TEXT                -- 2-4 word weekly AI theme (Phase 5)
+);
+CREATE INDEX IF NOT EXISTS idx_score_history_date ON score_history (date DESC);

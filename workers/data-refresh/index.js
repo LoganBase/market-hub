@@ -147,6 +147,11 @@ async function runRefresh(env) {
   const sig = await callHub(`${siteUrl}/api/signals`, hubToken);
   console.log(`[data-refresh] signals done — wrote: ${sig.signalsWritten ?? '?'}, scored: ${sig.outcomesScored ?? '?'}`);
 
+  // Snapshot the horizon scores into score_history (Historical Scorecard chart).
+  console.log(`[data-refresh] running score-snapshot`);
+  const snap = await callHub(`${siteUrl}/api/score-snapshot`, hubToken);
+  console.log(`[data-refresh] score-snapshot done — ${snap.error ? 'error: ' + snap.error : snap.skipped ? 'skipped: ' + snap.reason : 'stored ' + snap.stored?.date + ' → ' + snap.stored?.speedometer + '/' + snap.stored?.compass + '/' + snap.stored?.anchor}`);
+
   // Health check — email an alert only on a real failure (status 'error':
   // D1 unreachable or mass staleness). 'warning' covers benign, expected gaps
   // (market holidays, a stray missing ticker) and must not spam the inbox.
