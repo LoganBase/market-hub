@@ -1532,10 +1532,10 @@ function OptionWorkspace({ D }) {
                 const c = D.cards[id], sg = DSIG[c.status], on = id === sel;
                 return (
                   <button key={id} onClick={() => goTo(id)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 10,
-                    background: on ? '#141f2e' : 'transparent',
-                    borderTop: `1px solid ${on ? '#24364a' : 'transparent'}`,
-                    borderRight: `1px solid ${on ? '#24364a' : 'transparent'}`,
-                    borderBottom: `1px solid ${on ? '#24364a' : 'transparent'}`,
+                    background: on ? '#141f2e' : '#111827',
+                    borderTop: `1px solid ${on ? '#24364a' : '#1e2d3d'}`,
+                    borderRight: `1px solid ${on ? '#24364a' : '#1e2d3d'}`,
+                    borderBottom: `1px solid ${on ? '#24364a' : '#1e2d3d'}`,
                     borderLeft: `3px solid ${sg.c}` }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: sg.c, boxShadow: `0 0 6px ${sg.glow}`, flexShrink: 0 }} />
                     <span style={{ fontFamily: DSANS, fontSize: 13.5, color: on ? '#e8edf5' : '#cbd5e1', fontWeight: on ? 600 : 400, flex: 1 }}>{c.title}</span>
