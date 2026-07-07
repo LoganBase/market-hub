@@ -1534,9 +1534,6 @@ function OptionWorkspace({ D }) {
           {/* Old aggregate By-Section / By-Factor breakdowns removed — the
               three-horizon rail above is the scoring system now. */}
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <InterMarketTile data={imData} active={sel === 'intermarket'} onOpen={() => goTo('intermarket')} />
-        </div>
         {D.groups.map((g) => (
           <div key={g.label} style={{ marginBottom: 16 }}>
             <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', padding: '0 8px 8px' }}>{g.label}</div>
@@ -1581,6 +1578,9 @@ function OptionWorkspace({ D }) {
             </div>
           </div>
         ))}
+        <div style={{ marginBottom: 8 }}>
+          <InterMarketTile data={imData} active={sel === 'intermarket'} onOpen={() => goTo('intermarket')} />
+        </div>
         <button onClick={() => goTo('daily-brief')} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10,
           background: sel === 'daily-brief' ? '#141f2e' : '#111827',
           borderTop: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
@@ -1869,7 +1869,6 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: mob ? '16px 10px 40px' : '30px 28px 60px', display: 'flex', flexDirection: 'column', gap: mob ? 14 : 22 }}>
       {D.horizons ? <HorizonHero horizons={D.horizons} exec={D.exec} onOpen={() => setOpen('market-summary')} /> : <BreadthBar exec={D.exec} cats={D.categories} groups={D.groups} cards={D.cards} />}
-      <InterMarketTile data={imData} active={false} onOpen={() => setOpen('intermarket')} />
       {D.groups.map((g) => (
         <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', paddingLeft: 2 }}>{g.label}</span>
@@ -1934,6 +1933,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
           })}
         </div>
       ))}
+      <InterMarketTile data={imData} active={false} onOpen={() => setOpen('intermarket')} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', paddingLeft: 2 }}>Daily Context</span>
         <DailyBriefGlanceRow brief={brief} onOpen={() => setOpen('daily-brief')} />
