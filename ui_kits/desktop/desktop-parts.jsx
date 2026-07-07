@@ -949,6 +949,23 @@ function InteractionMatrix({ matrix }) {
   );
 }
 
+// Exec Summary banner — renders only when a top-3 InterMarket ratio has a
+// confirmed, fresh turn (self-fetches; diagnostic, never touches the score).
+function InterMarketCallout() {
+  const data = useRegimeRatios();
+  const c = data && data.callout;
+  if (!c) return null;
+  const on = c.riskDir === 'risk-on';
+  const col = on ? '#22c55e' : '#ef4444';
+  return (
+    <div style={{ borderTop: `1px solid ${on ? '#14532d' : '#3a1010'}`, paddingTop: 14, display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+      <span style={{ fontFamily: DSANS, fontSize: 13, color: col, flexShrink: 0, marginTop: 1 }}>⟳</span>
+      <span style={{ fontFamily: DSANS, fontSize: 11.5, fontWeight: 700, color: col, letterSpacing: '.04em', flexShrink: 0 }}>INTERMARKET</span>
+      <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.4 }}>{c.message}</span>
+    </div>
+  );
+}
+
 function HorizonHero({ horizons, exec, onOpen }) {
   const mob = useIsMobileD();
   if (!horizons) return null;
@@ -995,6 +1012,7 @@ function HorizonHero({ horizons, exec, onOpen }) {
           </span>
         </div>
       )}
+      <InterMarketCallout />
     </div>
   );
 }
