@@ -1286,6 +1286,79 @@ function IMRow({ p, isTop, mob }) {
   );
 }
 
+// Cross-asset Relative Rotation Graph — plots each pair's RS-Ratio (ratio vs its
+// own 200d, x) against RS-Momentum (10d change of that, y), with a rotation trail.
+function CrossAssetRRG({ pairs, top }) {
+  const mob = useIsMobileD();
+  const TRAIL = 6, STEP = 5, MOM = 10;
+  const TC = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#64748b' }; // tier colors
+  const items = [];
+  for (const p of (pairs || [])) {
+    const s = p.series || [];
+    if (s.length < MOM + (TRAIL - 1) * STEP + 1) continue;
+    const rr = s.map(x => (x.v != null && x.s200) ? (x.v / x.s200) * 100 : null);
+    const trail = [];
+    for (let k = TRAIL - 1; k >= 0; k--) {
+      const i = s.length - 1 - k * STEP;
+      if (i < MOM || rr[i] == null || rr[i - MOM] == null) continue;
+      trail.push({ x: rr[i], y: 100 + (rr[i] - rr[i - MOM]) });
+    }
+    if (trail.length >= 2) items.push({ key: p.key, label: p.label, tier: p.tier, isTop: top.includes(p.key), c: TC[p.tier] || '#64748b', trail });
+  }
+  if (!items.length) return null;
+
+  let xmin = 100, xmax = 100, ymin = 100, ymax = 100;
+  for (const it of items) for (const t of it.trail) { xmin = Math.min(xmin, t.x); xmax = Math.max(xmax, t.x); ymin = Math.min(ymin, t.y); ymax = Math.max(ymax, t.y); }
+  const xpad = (xmax - xmin) * 0.14 || 1, ypad = (ymax - ymin) * 0.14 || 1;
+  xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad;
+  const W = 640, H = 440, PAD = { t: 26, r: 24, b: 26, l: 30 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const toX = (v) => PAD.l + ((v - xmin) / (xmax - xmin)) * PW;
+  const toY = (v) => PAD.t + (1 - (v - ymin) / (ymax - ymin)) * PH;
+  const cx = toX(100), cy = toY(100);
+  const QUAD = [
+    { x: PAD.l, y: PAD.t, w: cx - PAD.l, h: cy - PAD.t, c: '#60a5fa', label: 'Improving', lx: PAD.l + 6, ly: PAD.t + 12, anchor: 'start' },
+    { x: cx, y: PAD.t, w: PAD.l + PW - cx, h: cy - PAD.t, c: '#22c55e', label: 'Leading', lx: PAD.l + PW - 6, ly: PAD.t + 12, anchor: 'end' },
+    { x: PAD.l, y: cy, w: cx - PAD.l, h: PAD.t + PH - cy, c: '#ef4444', label: 'Lagging', lx: PAD.l + 6, ly: PAD.t + PH - 6, anchor: 'start' },
+    { x: cx, y: cy, w: PAD.l + PW - cx, h: PAD.t + PH - cy, c: '#f59e0b', label: 'Weakening', lx: PAD.l + PW - 6, ly: PAD.t + PH - 6, anchor: 'end' },
+  ];
+
+  return (
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 14, padding: mob ? '14px 12px 10px' : '16px 18px 12px', marginBottom: 18 }}>
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 600, color: '#cbd5e1' }}>Cross-Asset Rotation</span>
+        <span style={{ fontFamily: DSANS, fontSize: 11, color: '#8295a9', marginLeft: 8 }}>RS-Ratio × momentum · 6-week trail · clockwise = typical cycle</span>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', height: mob ? 300 : 380 }}>
+        {QUAD.map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} fill={q.c} opacity="0.06" />)}
+        <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t + PH} stroke="#28384a" strokeWidth="1" strokeDasharray="4 4" />
+        <line x1={PAD.l} y1={cy} x2={PAD.l + PW} y2={cy} stroke="#28384a" strokeWidth="1" strokeDasharray="4 4" />
+        {QUAD.map((q, i) => <text key={'q' + i} x={q.lx} y={q.ly} textAnchor={q.anchor} fontSize="10" fontWeight="700" fill={q.c} fontFamily="sans-serif" opacity="0.75">{q.label}</text>)}
+        {items.map(it => {
+          const pts = it.trail.map(t => `${toX(t.x).toFixed(1)},${toY(t.y).toFixed(1)}`).join(' ');
+          const end = it.trail[it.trail.length - 1];
+          const ex = toX(end.x), ey = toY(end.y);
+          return (
+            <g key={it.key}>
+              <polyline points={pts} fill="none" stroke={it.c} strokeWidth={it.isTop ? 1.6 : 1} opacity={it.isTop ? 0.7 : 0.4} />
+              <circle cx={ex} cy={ey} r={it.isTop ? 4 : 2.6} fill={it.c} stroke="#0d1520" strokeWidth="1" />
+              {(it.isTop || !mob) && <text x={ex + 6} y={ey + 3} fontSize={it.isTop ? 9.5 : 8} fontWeight={it.isTop ? '700' : '400'} fill={it.isTop ? '#e8edf5' : '#94a3b8'} fontFamily="sans-serif">{it.label}</text>}
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 4 }}>
+        {[['1', 'Leading — risk appetite'], ['2', 'Cyclical'], ['3', 'Breadth/style'], ['4', 'Cross-asset']].map(([t, lab]) => (
+          <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 9, height: 3, borderRadius: 2, background: TC[t], display: 'inline-block' }} />
+            <span style={{ fontFamily: DSANS, fontSize: 9.5, color: '#64748b' }}>{lab}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function InterMarketDeepDive({ onBack }) {
   const data = useRegimeRatios();
   const mob = useIsMobileD();
@@ -1316,6 +1389,7 @@ function InterMarketDeepDive({ onBack }) {
         </div>
       )}
       {!data && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Loading…</div>}
+      {data && <CrossAssetRRG pairs={data.pairs} top={data.top} />}
       {data && [1, 2, 3, 4].map(tier => {
         const ps = data.pairs.filter(p => p.tier === tier);
         if (!ps.length) return null;
