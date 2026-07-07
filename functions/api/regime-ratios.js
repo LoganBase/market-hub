@@ -38,7 +38,7 @@ const PAIRS = [
 ];
 const TOP = ['soxx_spy', 'eem_spy', 'xly_xlp'];
 const CONFIRM_DAYS = 5;   // must hold this many trading days to be "confirmed"
-const FRESH_DAYS   = 30;  // still "news" for this many trading days
+const FRESH_DAYS   = 90;  // still "news" for this many trading days
 const CHART_LEN    = 130; // points returned for the deep-dive mini charts
 
 export async function onRequest(context) {
