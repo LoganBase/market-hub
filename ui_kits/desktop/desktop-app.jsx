@@ -1578,10 +1578,11 @@ function OptionWorkspace({ D }) {
             </div>
           </div>
         ))}
-        <div style={{ marginBottom: 8 }}>
+        <div style={{ marginBottom: 16 }}>
           <InterMarketTile data={imData} active={sel === 'intermarket'} onOpen={() => goTo('intermarket')} />
         </div>
-        <button onClick={() => goTo('daily-brief')} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 8, padding: '12px 14px', borderRadius: 10,
+        <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', padding: '0 8px 8px' }}>Daily Context</div>
+        <button onClick={() => goTo('daily-brief')} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 0, padding: '12px 14px', borderRadius: 10,
           background: sel === 'daily-brief' ? '#141f2e' : '#111827',
           borderTop: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
           borderRight: `1px solid ${sel === 'daily-brief' ? '#24364a' : '#1e2d3d'}`,
