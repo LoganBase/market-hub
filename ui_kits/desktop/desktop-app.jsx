@@ -1474,7 +1474,8 @@ function OptionWorkspace({ D }) {
   const [sel, setSelRaw] = useStateA(() => { try { const v = localStorage.getItem('mh-ws-sel'); return v && D.cards[v] ? v : allIds[0]; } catch (e) { return allIds[0]; } });
   const setSel = (id) => { setSelRaw(id); try { localStorage.setItem('mh-ws-sel', id); } catch (e) {} };
   const brief = useDailyBrief();
-  const special = sel === 'daily-brief' || sel === 'exec-summary' || sel === 'macro-brief';
+  const imData = useRegimeRatios();
+  const special = sel === 'daily-brief' || sel === 'exec-summary' || sel === 'macro-brief' || sel === 'intermarket';
   const card = special ? null : D.cards[sel];
   // Responsive list/detail: two-pane when wide, single-pane drill-in when narrow.
   const twoPane = useMinWidth(640);
@@ -1532,6 +1533,9 @@ function OptionWorkspace({ D }) {
           })()}
           {/* Old aggregate By-Section / By-Factor breakdowns removed — the
               three-horizon rail above is the scoring system now. */}
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <InterMarketTile data={imData} active={sel === 'intermarket'} onOpen={() => goTo('intermarket')} />
         </div>
         {D.groups.map((g) => (
           <div key={g.label} style={{ marginBottom: 16 }}>
@@ -1621,6 +1625,8 @@ function OptionWorkspace({ D }) {
           <DailyBriefDeepDive brief={brief} D={D} onBack={briefBack} />
         ) : sel === 'macro-brief' ? (
           <MacroBriefDeepDive onBack={briefBack} />
+        ) : sel === 'intermarket' ? (
+          <InterMarketDeepDive />
         ) : sel === 'exec-summary' ? (
           <div style={{ maxWidth: 820, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 24 }}>
@@ -1818,6 +1824,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
   const open = openProp !== undefined ? openProp : openState;
   const setOpen = onSetOpen || setOpenState;
   const brief = useDailyBrief();
+  const imData = useRegimeRatios();
   if (open) {
     if (open === 'daily-brief') {
       return <DailyBriefDeepDive brief={brief} D={D} onBack={() => setOpen(null)} />;
@@ -1840,6 +1847,9 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
         </div>
       );
     }
+    if (open === 'intermarket') {
+      return <div style={{ padding: mob ? '16px 12px 50px' : '24px 32px 60px' }}><InterMarketDeepDive onBack={() => setOpen(null)} /></div>;
+    }
     const card = D.cards[open];
     return (
       <div style={{ maxWidth: 920, margin: '0 auto', padding: '24px 32px 60px' }}>
@@ -1859,6 +1869,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: mob ? '16px 10px 40px' : '30px 28px 60px', display: 'flex', flexDirection: 'column', gap: mob ? 14 : 22 }}>
       {D.horizons ? <HorizonHero horizons={D.horizons} exec={D.exec} onOpen={() => setOpen('market-summary')} /> : <BreadthBar exec={D.exec} cats={D.categories} groups={D.groups} cards={D.cards} />}
+      <InterMarketTile data={imData} active={false} onOpen={() => setOpen('intermarket')} />
       {D.groups.map((g) => (
         <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', paddingLeft: 2 }}>{g.label}</span>

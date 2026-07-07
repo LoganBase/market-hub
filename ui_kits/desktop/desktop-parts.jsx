@@ -1174,6 +1174,146 @@ function ScoreHistoryChart() {
   );
 }
 
+// ── InterMarket — cross-asset regime ratios (diagnostic; /api/regime-ratios) ──
+const IM_TIERS = { 1: 'Leading — risk appetite', 2: 'Cyclical rotation', 3: 'Breadth & style', 4: 'Cross-asset confirmation' };
+
+function useRegimeRatios() {
+  const [data, setData] = useStateD(null);
+  useEffectD(() => {
+    let alive = true;
+    fetch('/api/regime-ratios').then(r => r.json()).then(d => { if (alive && d.pairs) setData(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return data;
+}
+
+function imStatus(data) {
+  if (!data) return 'neutral';
+  const up = data.pairs.filter(p => data.top.includes(p.key) && p.regime === 'up').length;
+  return up >= 3 ? 'bullish' : up <= 0 ? 'bearish' : 'neutral';
+}
+
+// Card face — top-3 ratios + status. Used in the Workspace rail and Glance list.
+function InterMarketTile({ data, active, onOpen }) {
+  const status = imStatus(data);
+  const sg = DSIG[status];
+  const top = data ? data.pairs.filter(p => data.top.includes(p.key)) : [];
+  const callout = data && data.callout;
+  return (
+    <button onClick={onOpen} title="Cross-asset regime ratios" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', borderRadius: 12, padding: '12px 14px',
+      background: active ? '#141f2e' : '#111827',
+      borderTop: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderRight: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderBottom: `1px solid ${active ? '#24364a' : '#1e2d3d'}`,
+      borderLeft: `3px solid ${sg.c}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: sg.c, boxShadow: `0 0 6px ${sg.glow}`, flexShrink: 0 }} />
+        <span style={{ fontFamily: DSANS, fontSize: 13.5, fontWeight: 600, color: '#e8edf5' }}>InterMarket</span>
+        <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b' }}>Cross-Asset Regime</span>
+        {callout && <span style={{ marginLeft: 'auto', fontFamily: DSANS, fontSize: 9.5, fontWeight: 700, color: callout.riskDir === 'risk-on' ? '#22c55e' : '#ef4444', padding: '2px 6px', borderRadius: 4, background: '#0d1520', border: '1px solid #28384a' }}>⟳ TURN</span>}
+      </div>
+      {top.map(p => {
+        const up = p.regime === 'up';
+        const fresh = p.confirmed && p.fresh;
+        return (
+          <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontFamily: DMONO, fontSize: 11.5, color: '#cbd5e1', width: 78, flexShrink: 0 }}>{p.label}</span>
+            <span style={{ fontFamily: DMONO, fontSize: 11.5, fontWeight: 700, color: up ? '#22c55e' : '#ef4444' }}>{up ? '▲ risk-on' : '▼ risk-off'}</span>
+            {fresh && <span style={{ fontFamily: DSANS, fontSize: 9.5, color: up ? '#22c55e' : '#ef4444' }}>⟳ turned</span>}
+          </div>
+        );
+      })}
+      {!data && <span style={{ fontFamily: DSANS, fontSize: 11, color: '#475569' }}>Loading…</span>}
+    </button>
+  );
+}
+
+// Mini ratio chart: the ratio + its 50/200 SMAs, colored by current regime.
+function RatioMiniChart({ series, up }) {
+  if (!series || series.length < 2) return null;
+  const W = 240, H = 44, P = 3;
+  const vals = series.flatMap(p => [p.v, p.s50, p.s200]).filter(x => x != null);
+  const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+  const X = (i) => P + (i / (series.length - 1)) * (W - 2 * P);
+  const Y = (v) => P + (1 - (v - min) / rng) * (H - 2 * P);
+  const path = (key) => { let d = '', pen = false; series.forEach((p, i) => { if (p[key] == null) { pen = false; return; } d += `${pen ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[key]).toFixed(1)} `; pen = true; }); return d; };
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', height: H }}>
+      <path d={path('s200')} fill="none" stroke="#475569" strokeWidth="0.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+      <path d={path('s50')}  fill="none" stroke="#64748b" strokeWidth="0.8" vectorEffect="non-scaling-stroke" />
+      <path d={path('v')}    fill="none" stroke={up ? '#22c55e' : '#ef4444'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function IMRow({ p, isTop, mob }) {
+  const up = p.regime === 'up';
+  const c = up ? '#22c55e' : '#ef4444';
+  const fresh = p.confirmed && p.fresh;
+  const crossTxt = p.lastCross.daysAgo >= 175 ? 'stable >6mo'
+    : `${p.lastCross.dir === 'golden' ? 'turned up' : 'turned down'} ${p.lastCross.daysAgo}d ago`;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, padding: '10px 0', borderBottom: '1px solid #16202e' }}>
+      <div style={{ width: mob ? 96 : 148, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {isTop && <span title="card-face signal" style={{ color: '#a855f7', fontSize: 10, flexShrink: 0 }}>★</span>}
+          <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 600, color: '#e8edf5' }}>{p.label}</span>
+        </div>
+        {!mob && <div style={{ fontFamily: DSANS, fontSize: 10, color: '#64748b', marginTop: 2 }}>{p.up}</div>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}><RatioMiniChart series={p.series} up={up} /></div>
+      <div style={{ width: mob ? 78 : 120, flexShrink: 0, textAlign: 'right' }}>
+        <div style={{ fontFamily: DMONO, fontSize: 12, fontWeight: 700, color: c }}>{up ? '▲' : '▼'} {mob ? '' : (up ? 'risk-on' : 'risk-off')}</div>
+        <div style={{ fontFamily: DSANS, fontSize: 9.5, color: fresh ? c : '#64748b', marginTop: 2 }}>{fresh && '⟳ '}{crossTxt}</div>
+      </div>
+    </div>
+  );
+}
+
+function InterMarketDeepDive({ onBack }) {
+  const data = useRegimeRatios();
+  const mob = useIsMobileD();
+  const status = imStatus(data);
+  const sg = DSIG[status];
+  const callout = data && data.callout;
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      {onBack && (
+        <button onClick={onBack} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 4px 14px' }}>
+          <svg width="8" height="13" viewBox="0 0 8 13"><path d="M6.5 1L1.5 6.5l5 5.5" stroke="#94a3b8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <span style={{ fontFamily: DSANS, fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>All signals</span>
+        </button>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+        <span style={{ width: 11, height: 11, borderRadius: '50%', background: sg.c, boxShadow: `0 0 9px ${sg.c}` }} />
+        <span style={{ fontFamily: DSANS, fontSize: mob ? 20 : 25, fontWeight: 700, color: '#e8edf5' }}>InterMarket</span>
+        <span style={{ fontFamily: DSANS, fontSize: 12.5, color: '#64748b' }}>Cross-Asset Regime</span>
+        {data && <span style={{ marginLeft: 'auto', fontFamily: DMONO, fontSize: 11.5, color: '#64748b' }}>as of {data.asOf}</span>}
+      </div>
+      <p style={{ fontFamily: DSANS, fontSize: 11.5, color: '#64748b', margin: '0 0 16px', lineHeight: 1.55 }}>
+        Cross-asset relative-strength ratios (rising = risk-on), ranked by 18-year signal quality. <span style={{ color: '#a855f7' }}>★</span> = the three cleanest (card face); a confirmed, fresh turn in a ★ pair raises an Exec Summary callout. Diagnostic only — not scored into the composite.
+      </p>
+      {callout && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, marginBottom: 16, background: callout.riskDir === 'risk-on' ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)', border: `1px solid ${callout.riskDir === 'risk-on' ? '#14532d' : '#7f1d1d'}` }}>
+          <span style={{ fontFamily: DSANS, fontSize: 13, color: callout.riskDir === 'risk-on' ? '#22c55e' : '#ef4444', flexShrink: 0 }}>⟳</span>
+          <span style={{ fontFamily: DSANS, fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.5 }}>{callout.message}</span>
+        </div>
+      )}
+      {!data && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Loading…</div>}
+      {data && [1, 2, 3, 4].map(tier => {
+        const ps = data.pairs.filter(p => p.tier === tier);
+        if (!ps.length) return null;
+        return (
+          <div key={tier} style={{ marginBottom: 18 }}>
+            <div style={{ fontFamily: DSANS, fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#8295a9', marginBottom: 4 }}>Tier {tier} · {IM_TIERS[tier]}</div>
+            <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 12, padding: '2px 16px' }}>
+              {ps.map(p => <IMRow key={p.key} p={p} isTop={data.top.includes(p.key)} mob={mob} />)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Compact horizon strip for the 340px workspace rail.
 function HorizonRailMini({ horizons }) {
   if (!horizons) return null;
