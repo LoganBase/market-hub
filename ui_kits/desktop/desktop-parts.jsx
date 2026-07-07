@@ -1100,13 +1100,26 @@ function ScoreHistoryChart() {
       {noData && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Not enough history yet — accrues nightly.</div>}
       {!data && !noData && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Loading…</div>}
       {data && (
-        <div style={{ position: 'relative' }}>
+        <>
+          <div style={{ position: 'relative', height: 16 }}>
+            {(data.annotations || []).map((a, k) => {
+              const c = QC[a.quadrant] || '#64748b';
+              return (
+                <div key={k} style={{ position: 'absolute', bottom: 0, left: `${(X(a.i) / W) * 100}%`, transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                  {a.theme && <div style={{ fontFamily: DSANS, fontSize: 8.5, color: '#94a3b8', whiteSpace: 'nowrap', maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{a.theme}</div>}
+                  <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `5px solid ${c}`, margin: '1px auto 0' }} />
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ position: 'relative' }}>
           {[10, 5, 0].map(g => (
             <span key={g} style={{ position: 'absolute', left: 0, top: `${(Y(g) / H) * 100}%`, transform: 'translateY(-50%)', fontFamily: DMONO, fontSize: 9, color: '#475569', pointerEvents: 'none' }}>{g}</span>
           ))}
           <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', height: svgH }}
             onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
             {bands.map((b, i) => <rect key={i} x={b.x0} y={PAD.t} width={Math.max(b.x1 - b.x0, 0.5)} height={PH} fill={b.color} opacity="0.14" />)}
+            {(data.annotations || []).map((a, k) => <line key={'a' + k} x1={X(a.i)} y1={PAD.t} x2={X(a.i)} y2={PAD.t + PH} stroke={QC[a.quadrant] || '#64748b'} strokeWidth="0.7" strokeDasharray="2 4" opacity="0.45" vectorEffect="non-scaling-stroke" />)}
             {[2.5, 5, 7.5].map(g => <line key={g} x1={PAD.l} y1={Y(g)} x2={W - PAD.r} y2={Y(g)} stroke="#1e2d3d" strokeWidth="0.6" strokeDasharray={g === 5 ? '0' : '3 5'} opacity={g === 5 ? 0.7 : 0.4} vectorEffect="non-scaling-stroke" />)}
             {SERIES.map(s => <path key={s.key} d={linePath(s.key)} fill="none" stroke={s.color} strokeWidth={s.faint ? 1.1 : 1.7} strokeLinejoin="round" strokeLinecap="round" opacity={s.faint ? 0.5 : 1} strokeDasharray={s.faint ? '4 3' : '0'} vectorEffect="non-scaling-stroke" />)}
             {hv != null && <line x1={X(hv)} y1={PAD.t} x2={X(hv)} y2={PAD.t + PH} stroke="#64748b" strokeWidth="0.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
@@ -1143,6 +1156,7 @@ function ScoreHistoryChart() {
             </div>
           )}
         </div>
+        </>
       )}
       <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.04em', color: '#8295a9' }}>Regime shading</span>

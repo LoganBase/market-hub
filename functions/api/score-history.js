@@ -33,15 +33,22 @@ export async function onRequest(context) {
   }
 
   // Annotations: quadrant transitions (regime changes) — the narrative markers.
+  // Only keep transitions where the NEW regime persists >= MIN_RUN trading days, so
+  // 1-2 day flickers don't clutter the chart.
+  const MIN_RUN = 4;
   const annotations = [];
   for (let i = 1; i < results.length; i++) {
     const r = results[i];
     if (r.quadrant && r.quadrant !== results[i - 1].quadrant) {
-      annotations.push({
-        i, date: r.date, kind: 'regime', quadrant: r.quadrant,
-        theme: r.brief_theme || null,
-        scores: [r.speedometer, r.compass, r.anchor],
-      });
+      let run = 1;
+      while (i + run < results.length && results[i + run].quadrant === r.quadrant) run++;
+      if (run >= MIN_RUN) {
+        annotations.push({
+          i, date: r.date, kind: 'regime', quadrant: r.quadrant,
+          theme: r.brief_theme || null,
+          scores: [r.speedometer, r.compass, r.anchor],
+        });
+      }
     }
   }
 
