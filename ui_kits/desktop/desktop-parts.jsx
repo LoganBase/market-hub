@@ -1039,6 +1039,7 @@ function ScoreHistoryChart() {
   const [hoverIdx, setHover]  = useStateD(null);
   const [noData, setNoData]   = useStateD(false);
   const [hoverAnno, setHoverAnno] = useStateD(null);
+  const [imTurns, setImTurns] = useStateD(null);
   const mob    = useIsMobileD();
   const svgRef = useRefD(null);
 
@@ -1049,6 +1050,12 @@ function ScoreHistoryChart() {
       .catch(() => { if (alive) setNoData(true); });
     return () => { alive = false; };
   }, [range]);
+
+  useEffectD(() => {
+    let alive = true;
+    fetch('/api/regime-ratios').then(r => r.json()).then(d => { if (alive && d.topTurns) setImTurns(d.topTurns); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const RANGES = [['3m','3M'],['6m','6M'],['1y','1Y'],['2y','2Y'],['all','All']];
   const QC   = { 'add-risk': '#22c55e', 'bear-rally': '#f59e0b', 'accumulate': '#60a5fa', 'risk-off': '#ef4444' };
@@ -1065,6 +1072,8 @@ function ScoreHistoryChart() {
   const X = (i) => PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * PW);
   const Y = (v) => PAD.t + (1 - (v == null ? 0 : v) / 10) * PH;
   const svgH = mob ? 190 : 230;
+  // Top-3 InterMarket turns mapped onto the current range (skip turns outside it).
+  const visTurns = (data && imTurns) ? imTurns.map(t => ({ ...t, ti: data.dates.indexOf(t.date) })).filter(t => t.ti >= 0) : [];
 
   const bands = [];
   if (data) {
@@ -1121,32 +1130,27 @@ function ScoreHistoryChart() {
       {data && (
         <>
           <div style={{ position: 'relative', height: 16 }}>
-            {(data.annotations || []).map((a, k) => {
-              const c = QC[a.quadrant] || '#64748b';
+            {visTurns.map((t, k) => {
+              const on = t.riskDir === 'risk-on';
+              const c = on ? '#22c55e' : '#ef4444';
               return (
                 <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
-                  style={{ position: 'absolute', bottom: 0, left: `${(X(a.i) / W) * 100}%`, transform: 'translateX(-50%)', textAlign: 'center', cursor: 'default', padding: '0 3px', zIndex: hoverAnno === k ? 6 : 1 }}>
-                  {a.theme && <div style={{ fontFamily: DSANS, fontSize: 8.5, color: '#94a3b8', whiteSpace: 'nowrap', maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{a.theme}</div>}
+                  style={{ position: 'absolute', bottom: 0, left: `${(X(t.ti) / W) * 100}%`, transform: 'translateX(-50%)', textAlign: 'center', cursor: 'default', padding: '0 3px', zIndex: hoverAnno === k ? 6 : 1 }}>
+                  <div style={{ fontFamily: DSANS, fontSize: 8.5, fontWeight: 600, color: c, whiteSpace: 'nowrap', lineHeight: 1 }}>{t.num} {on ? '▲' : '▼'}</div>
                   <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `5px solid ${c}`, margin: '1px auto 0' }} />
                 </div>
               );
             })}
-            {hoverAnno != null && data.annotations[hoverAnno] && (() => {
-              const a = data.annotations[hoverAnno];
-              const lp = (X(a.i) / W) * 100, right = lp > 60;
+            {hoverAnno != null && visTurns[hoverAnno] && (() => {
+              const t = visTurns[hoverAnno];
+              const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
+              const lp = (X(t.ti) / W) * 100, right = lp > 60;
               return (
                 <div style={{ position: 'absolute', top: 15, [right ? 'right' : 'left']: `${right ? (100 - lp) : lp}%`, transform: `translateX(${right ? '-' : ''}6px)`, zIndex: 8, pointerEvents: 'none',
-                  background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 156, maxWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
-                  <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{a.date} · regime change</div>
-                  <div style={{ fontFamily: DSANS, fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>
-                    <span style={{ color: QC[a.from] || '#64748b' }}>{QLAB[a.from] || a.from || '—'}</span>
-                    <span style={{ color: '#64748b' }}> → </span>
-                    <span style={{ color: QC[a.quadrant] || '#64748b' }}>{QLAB[a.quadrant] || a.quadrant}</span>
-                  </div>
-                  <div style={{ fontFamily: DMONO, fontSize: 10.5, color: '#94a3b8' }}>SPD {a.scores[0]} · CMP {a.scores[1]} · ANC {a.scores[2]}</div>
-                  {a.theme
-                    ? <div style={{ marginTop: 5, display: 'flex', gap: 5, alignItems: 'flex-start' }}><span style={{ color: '#a855f7', fontSize: 10, flexShrink: 0 }}>✦</span><span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#c4b5fd', lineHeight: 1.4 }}>{a.theme}</span></div>
-                    : <div style={{ marginTop: 5, fontFamily: DSANS, fontSize: 9.5, color: '#475569' }}>No brief theme for this week</div>}
+                  background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 168, maxWidth: 230, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
+                  <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{t.date} · InterMarket turn</div>
+                  <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: c, marginBottom: 4 }}>{t.label} {on ? '▲ risk-on' : '▼ risk-off'}</div>
+                  <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45 }}>{(t.msg || '').split(' — ')[1] || t.msg}</div>
                 </div>
               );
             })()}
@@ -1158,7 +1162,7 @@ function ScoreHistoryChart() {
           <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', height: svgH }}
             onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
             {bands.map((b, i) => <rect key={i} x={b.x0} y={PAD.t} width={Math.max(b.x1 - b.x0, 0.5)} height={PH} fill={b.color} opacity="0.14" />)}
-            {(data.annotations || []).map((a, k) => <line key={'a' + k} x1={X(a.i)} y1={PAD.t} x2={X(a.i)} y2={PAD.t + PH} stroke={QC[a.quadrant] || '#64748b'} strokeWidth="0.7" strokeDasharray="2 4" opacity="0.45" vectorEffect="non-scaling-stroke" />)}
+            {visTurns.map((t, k) => <line key={'t' + k} x1={X(t.ti)} y1={PAD.t} x2={X(t.ti)} y2={PAD.t + PH} stroke={t.riskDir === 'risk-on' ? '#22c55e' : '#ef4444'} strokeWidth="0.7" strokeDasharray="2 4" opacity="0.4" vectorEffect="non-scaling-stroke" />)}
             {[2.5, 5, 7.5].map(g => <line key={g} x1={PAD.l} y1={Y(g)} x2={W - PAD.r} y2={Y(g)} stroke="#1e2d3d" strokeWidth="0.6" strokeDasharray={g === 5 ? '0' : '3 5'} opacity={g === 5 ? 0.7 : 0.4} vectorEffect="non-scaling-stroke" />)}
             {SERIES.map(s => <path key={s.key} d={linePath(s.key)} fill="none" stroke={s.color} strokeWidth={s.faint ? 1.1 : 1.7} strokeLinejoin="round" strokeLinecap="round" opacity={s.faint ? 0.5 : 1} strokeDasharray={s.faint ? '4 3' : '0'} vectorEffect="non-scaling-stroke" />)}
             {hv != null && <line x1={X(hv)} y1={PAD.t} x2={X(hv)} y2={PAD.t + PH} stroke="#64748b" strokeWidth="0.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
@@ -1219,7 +1223,7 @@ function ScoreHistoryChart() {
         ))}
       </div>
       <p style={{ fontFamily: DSANS, fontSize: 10.5, color: '#475569', margin: '8px 0 0', lineHeight: 1.5 }}>
-        Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
+        <span style={{ color: '#22c55e' }}>▲</span>/<span style={{ color: '#ef4444' }}>▼</span> markers = confirmed turns in the top-3 InterMarket ratios (SOXX/SPY, EEM/SPY, XLY/XLP) — green risk-on, red risk-off; hover for detail. Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
       </p>
     </div>
   );
