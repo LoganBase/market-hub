@@ -1060,6 +1060,8 @@ function ScoreHistoryChart() {
   const RANGES = [['3m','3M'],['6m','6M'],['1y','1Y'],['2y','2Y'],['all','All']];
   const QC   = { 'add-risk': '#22c55e', 'bear-rally': '#f59e0b', 'accumulate': '#60a5fa', 'risk-off': '#ef4444' };
   const QLAB = { 'add-risk': 'Add Risk', 'bear-rally': 'Bear Rally', 'accumulate': 'Accumulate', 'risk-off': 'Risk-Off' };
+  const TC   = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#64748b' };   // tier colors (match the RRG)
+  const TL   = { 1: 'Leading', 2: 'Cyclical', 3: 'Breadth/style', 4: 'Cross-asset' };
   const SERIES = [
     { key: 'speedometer', label: 'Speedometer', color: '#a855f7' },
     { key: 'compass',     label: 'Compass',     color: '#22d3ee' },
@@ -1142,7 +1144,7 @@ function ScoreHistoryChart() {
             return (
               <div style={{ position: 'relative', height: laneH }}>
                 {placed.map((t, k) => {
-                  const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
+                  const on = t.riskDir === 'risk-on', c = TC[t.tier] || '#64748b';
                   const sz = t.top ? 5 : 4, h = t.top ? 7 : 5;
                   return (
                     <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
@@ -1154,13 +1156,13 @@ function ScoreHistoryChart() {
                 })}
                 {hoverAnno != null && placed[hoverAnno] && (() => {
                   const t = placed[hoverAnno];
-                  const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
+                  const on = t.riskDir === 'risk-on', dcol = on ? '#22c55e' : '#ef4444';
                   const right = t.lp > 60;
                   return (
                     <div style={{ position: 'absolute', top: laneH - 1, [right ? 'right' : 'left']: `${right ? (100 - t.lp) : t.lp}%`, transform: `translateX(${right ? '-' : ''}6px)`, zIndex: 12, pointerEvents: 'none',
                       background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 168, maxWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
-                      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{t.date} · InterMarket turn{t.top ? <span style={{ color: '#a855f7' }}> · ★</span> : null}</div>
-                      <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: c, marginBottom: 4 }}>{t.label} {on ? '▲ risk-on' : '▼ risk-off'}</div>
+                      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{t.date} · <span style={{ color: TC[t.tier] }}>Tier {t.tier} · {TL[t.tier]}</span>{t.top ? <span style={{ color: '#a855f7' }}> · ★</span> : null}</div>
+                      <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: dcol, marginBottom: 4 }}>{t.label} {on ? '▲ risk-on' : '▼ risk-off'}</div>
                       <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45 }}>{(t.msg || '').split(' — ')[1] || t.msg}</div>
                     </div>
                   );
@@ -1175,7 +1177,7 @@ function ScoreHistoryChart() {
           <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', height: svgH }}
             onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
             {bands.map((b, i) => <rect key={i} x={b.x0} y={PAD.t} width={Math.max(b.x1 - b.x0, 0.5)} height={PH} fill={b.color} opacity="0.14" />)}
-            {visTurns.map((t, k) => <line key={'t' + k} x1={X(t.ti)} y1={PAD.t} x2={X(t.ti)} y2={PAD.t + PH} stroke={t.riskDir === 'risk-on' ? '#22c55e' : '#ef4444'} strokeWidth="0.7" strokeDasharray="2 4" opacity="0.4" vectorEffect="non-scaling-stroke" />)}
+            {visTurns.map((t, k) => <line key={'t' + k} x1={X(t.ti)} y1={PAD.t} x2={X(t.ti)} y2={PAD.t + PH} stroke={TC[t.tier] || '#64748b'} strokeWidth="0.7" strokeDasharray="2 4" opacity="0.35" vectorEffect="non-scaling-stroke" />)}
             {[2.5, 5, 7.5].map(g => <line key={g} x1={PAD.l} y1={Y(g)} x2={W - PAD.r} y2={Y(g)} stroke="#1e2d3d" strokeWidth="0.6" strokeDasharray={g === 5 ? '0' : '3 5'} opacity={g === 5 ? 0.7 : 0.4} vectorEffect="non-scaling-stroke" />)}
             {SERIES.map(s => <path key={s.key} d={linePath(s.key)} fill="none" stroke={s.color} strokeWidth={s.faint ? 1.1 : 1.7} strokeLinejoin="round" strokeLinecap="round" opacity={s.faint ? 0.5 : 1} strokeDasharray={s.faint ? '4 3' : '0'} vectorEffect="non-scaling-stroke" />)}
             {hv != null && <line x1={X(hv)} y1={PAD.t} x2={X(hv)} y2={PAD.t + PH} stroke="#64748b" strokeWidth="0.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
@@ -1235,8 +1237,18 @@ function ScoreHistoryChart() {
           </div>
         ))}
       </div>
+      <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.04em', color: '#8295a9' }}>Turns</span>
+        {[1, 2, 3, 4].map(t => (
+          <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `6px solid ${TC[t]}` }} />
+            <span style={{ fontFamily: DSANS, fontSize: 10, color: '#64748b' }}>{TL[t]}</span>
+          </div>
+        ))}
+        <span style={{ fontFamily: DSANS, fontSize: 10, color: '#475569', marginLeft: 2 }}>· ▲ risk-on · ▼ risk-off</span>
+      </div>
       <p style={{ fontFamily: DSANS, fontSize: 10.5, color: '#475569', margin: '8px 0 0', lineHeight: 1.5 }}>
-        <span style={{ color: '#22c55e' }}>▲</span>/<span style={{ color: '#ef4444' }}>▼</span> markers = confirmed turns in the InterMarket ratios (all 4 tiers; the 3 card-face pairs are larger) — green risk-on, red risk-off; hover for detail. Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
+        Markers = confirmed InterMarket turns — shape = direction, color = tier (key above), card-face pairs larger; hover for the pair &amp; reason. Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
       </p>
     </div>
   );
