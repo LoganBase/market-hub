@@ -45,6 +45,7 @@ export async function onRequest(context) {
       if (run >= MIN_RUN) {
         annotations.push({
           i, date: r.date, kind: 'regime', quadrant: r.quadrant,
+          from: results[i - 1].quadrant,
           theme: r.brief_theme || null,
           scores: [r.speedometer, r.compass, r.anchor],
         });

@@ -1038,6 +1038,7 @@ function ScoreHistoryChart() {
   const [data,  setData]      = useStateD(null);
   const [hoverIdx, setHover]  = useStateD(null);
   const [noData, setNoData]   = useStateD(false);
+  const [hoverAnno, setHoverAnno] = useStateD(null);
   const mob    = useIsMobileD();
   const svgRef = useRefD(null);
 
@@ -1123,12 +1124,32 @@ function ScoreHistoryChart() {
             {(data.annotations || []).map((a, k) => {
               const c = QC[a.quadrant] || '#64748b';
               return (
-                <div key={k} style={{ position: 'absolute', bottom: 0, left: `${(X(a.i) / W) * 100}%`, transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
+                  style={{ position: 'absolute', bottom: 0, left: `${(X(a.i) / W) * 100}%`, transform: 'translateX(-50%)', textAlign: 'center', cursor: 'default', padding: '0 3px', zIndex: hoverAnno === k ? 6 : 1 }}>
                   {a.theme && <div style={{ fontFamily: DSANS, fontSize: 8.5, color: '#94a3b8', whiteSpace: 'nowrap', maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{a.theme}</div>}
                   <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `5px solid ${c}`, margin: '1px auto 0' }} />
                 </div>
               );
             })}
+            {hoverAnno != null && data.annotations[hoverAnno] && (() => {
+              const a = data.annotations[hoverAnno];
+              const lp = (X(a.i) / W) * 100, right = lp > 60;
+              return (
+                <div style={{ position: 'absolute', top: 15, [right ? 'right' : 'left']: `${right ? (100 - lp) : lp}%`, transform: `translateX(${right ? '-' : ''}6px)`, zIndex: 8, pointerEvents: 'none',
+                  background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 156, maxWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
+                  <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{a.date} · regime change</div>
+                  <div style={{ fontFamily: DSANS, fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>
+                    <span style={{ color: QC[a.from] || '#64748b' }}>{QLAB[a.from] || a.from || '—'}</span>
+                    <span style={{ color: '#64748b' }}> → </span>
+                    <span style={{ color: QC[a.quadrant] || '#64748b' }}>{QLAB[a.quadrant] || a.quadrant}</span>
+                  </div>
+                  <div style={{ fontFamily: DMONO, fontSize: 10.5, color: '#94a3b8' }}>SPD {a.scores[0]} · CMP {a.scores[1]} · ANC {a.scores[2]}</div>
+                  {a.theme
+                    ? <div style={{ marginTop: 5, display: 'flex', gap: 5, alignItems: 'flex-start' }}><span style={{ color: '#a855f7', fontSize: 10, flexShrink: 0 }}>✦</span><span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#c4b5fd', lineHeight: 1.4 }}>{a.theme}</span></div>
+                    : <div style={{ marginTop: 5, fontFamily: DSANS, fontSize: 9.5, color: '#475569' }}>No brief theme for this week</div>}
+                </div>
+              );
+            })()}
           </div>
           <div style={{ position: 'relative' }}>
           {[10, 5, 0].map(g => (
