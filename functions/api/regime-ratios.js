@@ -124,5 +124,54 @@ export async function onRequest(context) {
     }
   }
 
-  return new Response(JSON.stringify({ asOf, top: TOP, pairs, callout }), { headers: CORS });
+  // Historical confirmed turns of the top-3 — for the Score History timeline overlay.
+  const topPairs = PAIRS.filter(p => TOP.includes(p.key));
+  const topSyms = [...new Set(topPairs.flatMap(p => [p.num, p.den]))];
+  const topTurns = [];
+  try {
+    const ph2 = topSyms.map(() => '?').join(',');
+    const { results: rows2 = [] } = await db.prepare(
+      `SELECT symbol, date, close FROM daily_prices WHERE symbol IN (${ph2}) AND date >= DATE('now','-1100 days') ORDER BY symbol, date`
+    ).bind(...topSyms).all();
+    const bySym2 = {};
+    for (const r of rows2) (bySym2[r.symbol] ||= []).push(r);
+    for (const p of topPairs) {
+      const A = bySym2[p.num], B = bySym2[p.den];
+      if (!A || !B) continue;
+      const mb = new Map(B.map(r => [r.date, r.close]));
+      const ser = [];
+      for (const r of A) { const bc = mb.get(r.date); if (bc > 0) ser.push({ date: r.date, v: r.close / bc }); }
+      if (ser.length < 210) continue;
+      const s50 = [], s200 = [];
+      let a50 = 0, a200 = 0;
+      for (let i = 0; i < ser.length; i++) {
+        a50 += ser[i].v; a200 += ser[i].v;
+        if (i >= 50)  a50  -= ser[i - 50].v;
+        if (i >= 200) a200 -= ser[i - 200].v;
+        s50[i]  = i >= 49  ? a50 / 50   : null;
+        s200[i] = i >= 199 ? a200 / 200 : null;
+      }
+      const reg = (i) => (s50[i] != null && s200[i] != null) ? Math.sign(s50[i] - s200[i]) : null;
+      let prev = null;
+      for (let i = 199; i < ser.length; i++) {
+        const rg = reg(i);
+        if (prev === null) { prev = rg; continue; }
+        if (rg !== prev) {
+          let run = 1; while (i + run < ser.length && reg(i + run) === rg) run++;
+          if (run >= CONFIRM_DAYS) {   // only persistent turns
+            const dir = rg > 0 ? 'golden' : 'death';
+            topTurns.push({
+              key: p.key, label: p.label, num: p.num, date: ser[i].date, dir,
+              riskDir: rg > 0 ? 'risk-on' : 'risk-off',
+              msg: `${p.label} ${dir === 'golden' ? 'turned up' : 'turned down'} — ${dir === 'golden' ? (p.callUp || 'risk-on') : (p.callDown || 'risk-off')}`,
+            });
+          }
+          prev = rg;
+        }
+      }
+    }
+    topTurns.sort((x, y) => (x.date < y.date ? -1 : 1));
+  } catch (e) { /* topTurns are optional context */ }
+
+  return new Response(JSON.stringify({ asOf, top: TOP, pairs, callout, topTurns }), { headers: CORS });
 }
