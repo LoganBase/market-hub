@@ -19,9 +19,9 @@ const CORS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin'
 // scoring (leading & clean first; coincident cross-asset confirmation last).
 const PAIRS = [
   // Tier 1 — leading risk-appetite (clean + forward-meaningful). Top 3 = card face + callout-eligible.
-  { key: 'soxx_spy', label: 'SOXX / SPY', num: 'SOXX', den: 'SPY', tier: 1, up: 'Semis vs market — risk appetite', callUp: 'semis leading, risk appetite building', callDown: 'semis rolling over, risk appetite fading' },
-  { key: 'eem_spy',  label: 'EEM / SPY',  num: 'EEM',  den: 'SPY', tier: 1, up: 'EM vs US — global risk / dollar', callUp: 'EM leading, global risk-on', callDown: 'EM lagging, global risk-off' },
-  { key: 'xly_xlp',  label: 'XLY / XLP',  num: 'XLY',  den: 'XLP', tier: 1, up: 'Discretionary vs Staples — offense/defense', callUp: 'consumers on offense', callDown: 'consumers turning defensive' },
+  { key: 'soxx_spy', label: 'SOXX / SPY', num: 'SOXX', den: 'SPY', tier: 1, up: 'Semis vs market — risk appetite', callUp: 'semiconductors are outperforming the broad market — risk appetite is expanding from its leading edge', callDown: 'semiconductors are ceding to the broad market — risk appetite is cooling at the leading edge, often an early warning' },
+  { key: 'eem_spy',  label: 'EEM / SPY',  num: 'EEM',  den: 'SPY', tier: 1, up: 'EM vs US — global risk / dollar', callUp: 'emerging markets are leading the US — global risk-on, typically alongside a softer dollar', callDown: 'emerging markets are lagging the US — global risk-off and/or a firmer dollar' },
+  { key: 'xly_xlp',  label: 'XLY / XLP',  num: 'XLY',  den: 'XLP', tier: 1, up: 'Discretionary vs Staples — offense/defense', callUp: 'Consumer Discretionary is leading Staples — consumers on offense, a growth / risk-on tilt', callDown: 'Consumer Discretionary is lagging Staples — consumers turning defensive, a caution on growth' },
   { key: 'xlk_xlv',  label: 'XLK / XLV',  num: 'XLK',  den: 'XLV', tier: 1, up: 'Tech vs Health — growth/defensive' },
   // Tier 2 — cyclical rotation
   { key: 'xli_xlu',  label: 'XLI / XLU',  num: 'XLI',  den: 'XLU', tier: 2, up: 'Industrials vs Utilities — cyclical' },

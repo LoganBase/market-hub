@@ -1129,18 +1129,22 @@ function ScoreHistoryChart() {
       {!data && !noData && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Loading…</div>}
       {data && (
         <>
-          <div style={{ position: 'relative', height: 16 }}>
-            {visTurns.map((t, k) => {
-              const on = t.riskDir === 'risk-on';
-              const c = on ? '#22c55e' : '#ef4444';
-              return (
-                <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
-                  style={{ position: 'absolute', bottom: 0, left: `${(X(t.ti) / W) * 100}%`, transform: 'translateX(-50%)', textAlign: 'center', cursor: 'default', padding: '0 3px', zIndex: hoverAnno === k ? 6 : 1 }}>
-                  <div style={{ fontFamily: DSANS, fontSize: 8.5, fontWeight: 600, color: c, whiteSpace: 'nowrap', lineHeight: 1 }}>{t.num} {on ? '▲' : '▼'}</div>
-                  <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: `5px solid ${c}`, margin: '1px auto 0' }} />
-                </div>
-              );
-            })}
+          <div style={{ position: 'relative', height: 20 }}>
+            {(() => {
+              const CLOSE = 2.2; let prevLp = -99, prevRow = 0;
+              return visTurns.map((t, k) => {
+                const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
+                const lp = (X(t.ti) / W) * 100;
+                const row = (lp - prevLp < CLOSE) ? (prevRow === 0 ? 1 : 0) : 0;
+                prevLp = lp; prevRow = row;
+                return (
+                  <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
+                    style={{ position: 'absolute', bottom: row * 7, left: `${lp}%`, transform: 'translateX(-50%)', cursor: 'default', padding: '2px 4px', zIndex: hoverAnno === k ? 7 : 2 }}>
+                    <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', ...(on ? { borderBottom: `6px solid ${c}` } : { borderTop: `6px solid ${c}` }) }} />
+                  </div>
+                );
+              });
+            })()}
             {hoverAnno != null && visTurns[hoverAnno] && (() => {
               const t = visTurns[hoverAnno];
               const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
