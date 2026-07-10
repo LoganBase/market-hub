@@ -125,7 +125,7 @@ export async function onRequest(context) {
   }
 
   // Historical confirmed turns of the top-3 — for the Score History timeline overlay.
-  const topPairs = PAIRS.filter(p => TOP.includes(p.key));
+  const topPairs = PAIRS;   // all four tiers now
   const topSyms = [...new Set(topPairs.flatMap(p => [p.num, p.den]))];
   const topTurns = [];
   try {
@@ -161,7 +161,7 @@ export async function onRequest(context) {
           if (run >= CONFIRM_DAYS) {   // only persistent turns
             const dir = rg > 0 ? 'golden' : 'death';
             topTurns.push({
-              key: p.key, label: p.label, num: p.num, date: ser[i].date, dir,
+              key: p.key, label: p.label, num: p.num, tier: p.tier, top: TOP.includes(p.key), date: ser[i].date, dir,
               riskDir: rg > 0 ? 'risk-on' : 'risk-off',
               msg: `${p.label} ${dir === 'golden' ? 'turned up' : 'turned down'} — ${dir === 'golden' ? (p.callUp || 'risk-on') : (p.callDown || 'risk-off')}`,
             });

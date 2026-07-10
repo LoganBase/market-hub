@@ -1129,36 +1129,45 @@ function ScoreHistoryChart() {
       {!data && !noData && <div style={{ fontFamily: DSANS, fontSize: 13, color: '#64748b', padding: '30px 0' }}>Loading…</div>}
       {data && (
         <>
-          <div style={{ position: 'relative', height: 20 }}>
-            {(() => {
-              const CLOSE = 2.2; let prevLp = -99, prevRow = 0;
-              return visTurns.map((t, k) => {
-                const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
-                const lp = (X(t.ti) / W) * 100;
-                const row = (lp - prevLp < CLOSE) ? (prevRow === 0 ? 1 : 0) : 0;
-                prevLp = lp; prevRow = row;
-                return (
-                  <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
-                    style={{ position: 'absolute', bottom: row * 7, left: `${lp}%`, transform: 'translateX(-50%)', cursor: 'default', padding: '2px 4px', zIndex: hoverAnno === k ? 7 : 2 }}>
-                    <div style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', ...(on ? { borderBottom: `6px solid ${c}` } : { borderTop: `6px solid ${c}` }) }} />
-                  </div>
-                );
-              });
-            })()}
-            {hoverAnno != null && visTurns[hoverAnno] && (() => {
-              const t = visTurns[hoverAnno];
-              const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
-              const lp = (X(t.ti) / W) * 100, right = lp > 60;
-              return (
-                <div style={{ position: 'absolute', top: 15, [right ? 'right' : 'left']: `${right ? (100 - lp) : lp}%`, transform: `translateX(${right ? '-' : ''}6px)`, zIndex: 8, pointerEvents: 'none',
-                  background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 168, maxWidth: 230, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
-                  <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{t.date} · InterMarket turn</div>
-                  <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: c, marginBottom: 4 }}>{t.label} {on ? '▲ risk-on' : '▼ risk-off'}</div>
-                  <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45 }}>{(t.msg || '').split(' — ')[1] || t.msg}</div>
-                </div>
-              );
-            })()}
-          </div>
+          {(() => {
+            const CLOSE = 1.3, MAXR = 3;
+            const rowsLast = [];
+            const placed = visTurns.map(t => {
+              const lp = (X(t.ti) / W) * 100;
+              let r = 0; while (r < rowsLast.length && r < MAXR && lp - rowsLast[r] < CLOSE) r++;
+              rowsLast[r] = lp;
+              return { ...t, lp, row: r };
+            });
+            const laneH = 10 + placed.reduce((m, p) => Math.max(m, p.row), 0) * 7;
+            return (
+              <div style={{ position: 'relative', height: laneH }}>
+                {placed.map((t, k) => {
+                  const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
+                  const sz = t.top ? 5 : 4, h = t.top ? 7 : 5;
+                  return (
+                    <div key={k} onMouseEnter={() => setHoverAnno(k)} onMouseLeave={() => setHoverAnno(null)}
+                      style={{ position: 'absolute', bottom: t.row * 7, left: `${t.lp}%`, transform: 'translateX(-50%)', cursor: 'default', padding: '2px 3px',
+                        zIndex: hoverAnno === k ? 9 : (t.top ? 4 : 3), opacity: hoverAnno === k ? 1 : (t.top ? 1 : 0.7) }}>
+                      <div style={{ width: 0, height: 0, borderLeft: `${sz}px solid transparent`, borderRight: `${sz}px solid transparent`, ...(on ? { borderBottom: `${h}px solid ${c}` } : { borderTop: `${h}px solid ${c}` }) }} />
+                    </div>
+                  );
+                })}
+                {hoverAnno != null && placed[hoverAnno] && (() => {
+                  const t = placed[hoverAnno];
+                  const on = t.riskDir === 'risk-on', c = on ? '#22c55e' : '#ef4444';
+                  const right = t.lp > 60;
+                  return (
+                    <div style={{ position: 'absolute', top: laneH - 1, [right ? 'right' : 'left']: `${right ? (100 - t.lp) : t.lp}%`, transform: `translateX(${right ? '-' : ''}6px)`, zIndex: 12, pointerEvents: 'none',
+                      background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 168, maxWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
+                      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{t.date} · InterMarket turn{t.top ? <span style={{ color: '#a855f7' }}> · ★</span> : null}</div>
+                      <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: c, marginBottom: 4 }}>{t.label} {on ? '▲ risk-on' : '▼ risk-off'}</div>
+                      <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45 }}>{(t.msg || '').split(' — ')[1] || t.msg}</div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
           <div style={{ position: 'relative' }}>
           {[10, 5, 0].map(g => (
             <span key={g} style={{ position: 'absolute', left: 0, top: `${(Y(g) / H) * 100}%`, transform: 'translateY(-50%)', fontFamily: DMONO, fontSize: 9, color: '#475569', pointerEvents: 'none' }}>{g}</span>
@@ -1227,7 +1236,7 @@ function ScoreHistoryChart() {
         ))}
       </div>
       <p style={{ fontFamily: DSANS, fontSize: 10.5, color: '#475569', margin: '8px 0 0', lineHeight: 1.5 }}>
-        <span style={{ color: '#22c55e' }}>▲</span>/<span style={{ color: '#ef4444' }}>▼</span> markers = confirmed turns in the top-3 InterMarket ratios (SOXX/SPY, EEM/SPY, XLY/XLP) — green risk-on, red risk-off; hover for detail. Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
+        <span style={{ color: '#22c55e' }}>▲</span>/<span style={{ color: '#ef4444' }}>▼</span> markers = confirmed turns in the InterMarket ratios (all 4 tiers; the 3 card-face pairs are larger) — green risk-on, red risk-off; hover for detail. Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
       </p>
     </div>
   );
