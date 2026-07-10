@@ -1247,9 +1247,6 @@ function ScoreHistoryChart() {
         ))}
         <span style={{ fontFamily: DSANS, fontSize: 10, color: '#475569', marginLeft: 2 }}>· ▲ risk-on · ▼ risk-off</span>
       </div>
-      <p style={{ fontFamily: DSANS, fontSize: 10.5, color: '#475569', margin: '8px 0 0', lineHeight: 1.5 }}>
-        Markers = confirmed InterMarket turns — shape = direction, color = tier (key above), card-face pairs larger; hover for the pair &amp; reason. Earlier history is reconstructed by applying today's scoring model to past data — it shows how the current framework reads the past, not a live record from the time.
-      </p>
     </div>
   );
 }
