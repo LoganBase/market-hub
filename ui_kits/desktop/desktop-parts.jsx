@@ -1195,6 +1195,18 @@ function ScoreHistoryChart() {
             </div>
           )}
         </div>
+          <div style={{ position: 'relative', height: 14, marginTop: 3 }}>
+            {(() => {
+              const N = mob ? 4 : 6;
+              const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const fmt = (d) => { const p = (d || '').split('-'); return p.length === 3 ? `${MON[+p[1] - 1]} '${p[0].slice(2)}` : d; };
+              const ticks = []; for (let k = 0; k < N; k++) ticks.push(Math.round(k * (n - 1) / (N - 1)));
+              return ticks.map((ti, k) => {
+                const lp = (X(ti) / W) * 100, last = k === N - 1;
+                return <span key={k} style={{ position: 'absolute', top: 0, [last ? 'right' : 'left']: `${last ? (100 - lp) : lp}%`, transform: (k === 0 || last) ? 'none' : 'translateX(-50%)', fontFamily: DMONO, fontSize: 9, color: '#475569', whiteSpace: 'nowrap' }}>{fmt(data.dates[ti])}</span>;
+              });
+            })()}
+          </div>
         </>
       )}
       <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
