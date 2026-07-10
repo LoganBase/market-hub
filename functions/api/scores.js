@@ -2082,9 +2082,9 @@ function buildHorizons(q, breadthData, valn, fred) {
     : 'risk-off';
   const QLABEL = { 'add-risk': 'Add Positions', 'bear-rally': "Don't Add New Positions", 'accumulate': 'Add Positions on Dips', 'risk-off': 'Reduce Positions' };
   const GUIDANCE = {
-    'add-risk':   'Both the short-term and 2–3 month trends point up — a favourable window to add economically-sensitive positions and buy pullbacks.',
-    'bear-rally': 'The short-term is bouncing but the 2–3 month trend is broken — treat strength as a chance to sell, not to chase.',
-    'accumulate': 'The 2–3 month trend is intact while the short-term has pulled back — use the weakness to build positions gradually.',
+    'add-risk':   'Both the short-term and 2–3 month trends point up — the aligned window to add exposure directly, including into strength.',
+    'bear-rally': 'The short-term is bouncing but the 2–3 month trend is broken — hold off on new positions and use strength to trim, not to chase.',
+    'accumulate': 'The 2–3 month trend is intact while the short-term has pulled back — lean into the weakness to build positions on the dips.',
     'risk-off':   'Both timeframes point down — cut overall exposure and favour defensive positions and cash.',
   };
 
