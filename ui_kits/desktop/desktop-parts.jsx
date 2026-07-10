@@ -899,10 +899,10 @@ function AnchorDial({ anchor }) {
 
 function InteractionMatrix({ matrix }) {
   const QMETA = {
-    'add-risk':   { label: 'Add Risk',   color: '#22c55e' },
-    'bear-rally': { label: 'Bear Rally', color: '#f59e0b' },
-    'accumulate': { label: 'Accumulate', color: '#60a5fa' },
-    'risk-off':   { label: 'Risk-Off',   color: '#ef4444' },
+    'add-risk':   { label: 'Add Positions',           color: '#22c55e' },
+    'bear-rally': { label: "Don't Add New Positions",  color: '#f59e0b' },
+    'accumulate': { label: 'Add Positions on Dips',    color: '#60a5fa' },
+    'risk-off':   { label: 'Reduce Positions',         color: '#ef4444' },
   };
   // rows: Speed HIGH (top), Speed LOW (bottom); cols: Compass HIGH (left), Compass LOW (right)
   const rows = [['add-risk', 'bear-rally'], ['accumulate', 'risk-off']];
@@ -1059,7 +1059,7 @@ function ScoreHistoryChart() {
 
   const RANGES = [['3m','3M'],['6m','6M'],['1y','1Y'],['2y','2Y'],['all','All']];
   const QC   = { 'add-risk': '#22c55e', 'bear-rally': '#f59e0b', 'accumulate': '#60a5fa', 'risk-off': '#ef4444' };
-  const QLAB = { 'add-risk': 'Add Risk', 'bear-rally': 'Bear Rally', 'accumulate': 'Accumulate', 'risk-off': 'Risk-Off' };
+  const QLAB = { 'add-risk': 'Add Positions', 'bear-rally': "Don't Add New Positions", 'accumulate': 'Add Positions on Dips', 'risk-off': 'Reduce Positions' };
   const TC   = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#60a5fa' };   // tier colors (match the RRG)
   const TL   = { 1: 'Leading', 2: 'Cyclical', 3: 'Breadth/style', 4: 'Cross-asset' };
   const SERIES = [

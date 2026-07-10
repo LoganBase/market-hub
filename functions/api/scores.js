@@ -2080,7 +2080,7 @@ function buildHorizons(q, breadthData, valn, fred) {
     : speedHigh && !compassHigh ? 'bear-rally'
     : !speedHigh && compassHigh ? 'accumulate'
     : 'risk-off';
-  const QLABEL = { 'add-risk': 'Add Risk', 'bear-rally': 'Bear Rally', 'accumulate': 'Accumulate', 'risk-off': 'Risk-Off' };
+  const QLABEL = { 'add-risk': 'Add Positions', 'bear-rally': "Don't Add New Positions", 'accumulate': 'Add Positions on Dips', 'risk-off': 'Reduce Positions' };
   const GUIDANCE = {
     'add-risk':   'Both the short-term and 2–3 month trends point up — a favourable window to add economically-sensitive positions and buy pullbacks.',
     'bear-rally': 'The short-term is bouncing but the 2–3 month trend is broken — treat strength as a chance to sell, not to chase.',
