@@ -1060,7 +1060,7 @@ function ScoreHistoryChart() {
   const RANGES = [['3m','3M'],['6m','6M'],['1y','1Y'],['2y','2Y'],['all','All']];
   const QC   = { 'add-risk': '#22c55e', 'bear-rally': '#f59e0b', 'accumulate': '#60a5fa', 'risk-off': '#ef4444' };
   const QLAB = { 'add-risk': 'Add Risk', 'bear-rally': 'Bear Rally', 'accumulate': 'Accumulate', 'risk-off': 'Risk-Off' };
-  const TC   = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#64748b' };   // tier colors (match the RRG)
+  const TC   = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#60a5fa' };   // tier colors (match the RRG)
   const TL   = { 1: 'Leading', 2: 'Cyclical', 3: 'Breadth/style', 4: 'Cross-asset' };
   const SERIES = [
     { key: 'speedometer', label: 'Speedometer', color: '#a855f7' },
@@ -1353,7 +1353,7 @@ function IMRow({ p, isTop, mob }) {
 function CrossAssetRRG({ pairs, top }) {
   const mob = useIsMobileD();
   const TRAIL = 6, STEP = 5, MOM = 10;
-  const TC = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#64748b' }; // tier colors
+  const TC = { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 4: '#60a5fa' }; // tier colors
   const items = [];
   for (const p of (pairs || [])) {
     const s = p.series || [];
