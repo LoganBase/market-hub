@@ -94,12 +94,17 @@ export async function onRequest(context) {
     }
 
     // ── Weekend: return weekly summary of last 5 trading days ─────────────────
-    const nowUtc   = new Date();
-    const dow      = nowUtc.getUTCDay(); // 0=Sun, 6=Sat
-    const todayStr = nowUtc.toISOString().slice(0, 10);
+    // Weekend detection uses America/New_York (US market convention). Using UTC
+    // flipped the weekday Daily Brief into the weekend Weekly rollup ~4h early —
+    // from 8pm ET Friday, when UTC rolls into Saturday. Matches macro-brief.js.
+    const etFmt    = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/New_York' });
+    const todayStr = etFmt.format(new Date()); // YYYY-MM-DD in ET
+    const etDay    = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(new Date());
+    const DOW_IDX  = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const dow      = DOW_IDX[etDay] ?? 1; // 0=Sun, 6=Sat
 
     if ((dow === 0 || dow === 6) && !date) {
-      const monStr  = getMondayStr(nowUtc);
+      const monStr  = getMondayStr(new Date(todayStr + 'T12:00:00Z'));
       const wLabel  = getWeekLabel(monStr);
 
       const { results } = await db.prepare(`
