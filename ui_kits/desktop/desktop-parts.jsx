@@ -1158,12 +1158,18 @@ function ScoreHistoryChart() {
                   const t = placed[hoverAnno];
                   const on = t.riskDir === 'risk-on', dcol = on ? '#22c55e' : '#ef4444';
                   const right = t.lp > 60;
+                  const dRaw = (t.desc || '').trim();
+                  const desc = dRaw ? dRaw.charAt(0).toUpperCase() + dRaw.slice(1) + (/[.!?]$/.test(dRaw) ? '' : '.') : '';
                   return (
                     <div style={{ position: 'absolute', top: laneH - 1, [right ? 'right' : 'left']: `${right ? (100 - t.lp) : t.lp}%`, transform: `translateX(${right ? '-' : ''}6px)`, zIndex: 12, pointerEvents: 'none',
-                      background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '8px 10px', minWidth: 168, maxWidth: 240, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
-                      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginBottom: 4 }}>{t.date} · <span style={{ color: TC[t.tier] }}>Tier {t.tier} · {TL[t.tier]}</span>{t.top ? <span style={{ color: '#a855f7' }}> · ★</span> : null}</div>
-                      <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: dcol, marginBottom: 4 }}>{t.label} {on ? '▲ risk-on' : '▼ risk-off'}</div>
-                      <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45 }}>{(t.msg || '').split(' — ')[1] || t.msg}</div>
+                      background: '#0a1119', border: '1px solid #28384a', borderRadius: 8, padding: '9px 11px', minWidth: 190, maxWidth: 258, boxShadow: '0 8px 24px rgba(0,0,0,.6)' }}>
+                      <div style={{ fontFamily: DMONO, fontSize: 10, color: '#64748b', marginBottom: 6 }}>{t.date}</div>
+                      <div style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, color: TC[t.tier], marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', ...(on ? { borderBottom: `6px solid ${TC[t.tier]}` } : { borderTop: `6px solid ${TC[t.tier]}` }) }} />
+                        <span>Tier {t.tier} · {TL[t.tier]}{t.top ? <span style={{ color: '#a855f7' }}> · ★ card face</span> : null}</span>
+                      </div>
+                      <div style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, color: dcol, marginBottom: 6 }}>{t.label} · {on ? '▲ risk-on' : '▼ risk-off'}</div>
+                      <div style={{ fontFamily: DSANS, fontSize: 11, color: '#cbd5e1', lineHeight: 1.5, borderTop: '1px solid #1e2d3d', paddingTop: 6 }}>{desc}</div>
                     </div>
                   );
                 })()}
