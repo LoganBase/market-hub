@@ -1934,7 +1934,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
           })}
         </div>
       ))}
-      <InterMarketTile data={imData} active={false} onOpen={() => setOpen('intermarket')} />
+      <InterMarketGlanceRow data={imData} onOpen={() => setOpen('intermarket')} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8295a9', paddingLeft: 2 }}>Daily Context</span>
         <DailyBriefGlanceRow brief={brief} onOpen={() => setOpen('daily-brief')} />

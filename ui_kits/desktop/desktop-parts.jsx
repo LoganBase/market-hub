@@ -1276,35 +1276,66 @@ function imStatus(data) {
   return up >= 3 ? 'bullish' : up <= 0 ? 'bearish' : 'neutral';
 }
 
-// Card face — top-3 ratios + status. Used in the Workspace rail and Glance list.
+// Mini sparkline of the leading pair's ratio — decorative, matches the other
+// card MiniSparks. Colored by the overall InterMarket status.
+function InterMarketMiniSpark({ data, color, w = 64, h = 22 }) {
+  const top = (data && data.pairs) ? data.pairs.find(p => p.key === data.top[0]) : null;
+  const vals = (top?.series || []).map(p => p.v).filter(v => v != null);
+  if (vals.length < 2) return <svg width={w} height={h} style={{ flexShrink: 0 }} />;
+  const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
+  const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * w).toFixed(1)},${(h - 2 - ((v - min) / rng) * (h - 4)).toFixed(1)}`);
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ flexShrink: 0 }}>
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Compact rail row — matches the other Workspace rail cards (dot · title · spark).
 function InterMarketTile({ data, active, onOpen }) {
   const status = imStatus(data);
   const sg = DSIG[status];
-  const top = data ? data.pairs.filter(p => data.top.includes(p.key)) : [];
-  const callout = data && data.callout;
   return (
-    <button onClick={onOpen} title="Cross-asset regime ratios" style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', borderRadius: 12, padding: '12px 14px',
+    <button onClick={onOpen} title="Cross-asset regime ratios" style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 11, width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10,
       background: active ? '#141f2e' : '#111827',
       borderTop: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderRight: `1px solid ${active ? '#24364a' : '#1e2d3d'}`, borderBottom: `1px solid ${active ? '#24364a' : '#1e2d3d'}`,
       borderLeft: `3px solid ${sg.c}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: sg.c, boxShadow: `0 0 6px ${sg.glow}`, flexShrink: 0 }} />
-        <span style={{ fontFamily: DSANS, fontSize: 13.5, fontWeight: 600, color: '#e8edf5' }}>InterMarket</span>
-        <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b' }}>Cross-Asset Regime</span>
-        {callout && <span style={{ marginLeft: 'auto', fontFamily: DSANS, fontSize: 9.5, fontWeight: 700, color: callout.riskDir === 'risk-on' ? '#22c55e' : '#ef4444', padding: '2px 6px', borderRadius: 4, background: '#0d1520', border: '1px solid #28384a' }}>⟳ TURN</span>}
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: sg.c, boxShadow: `0 0 6px ${sg.glow}`, flexShrink: 0 }} />
+      <span style={{ fontFamily: DSANS, fontSize: 13.5, color: active ? '#e8edf5' : '#cbd5e1', fontWeight: active ? 600 : 400, flex: 1 }}>InterMarket</span>
+      <InterMarketMiniSpark data={data} color={sg.c} w={46} h={16} />
+    </button>
+  );
+}
+
+// Glance list row — matches the standard card rows (Positioning et al.):
+// title · 3 KPI columns · spark · status pill · chevron.
+function InterMarketGlanceRow({ data, onOpen }) {
+  const mob = useIsMobileD();
+  const status = imStatus(data);
+  const sg = DSIG[status];
+  const top = data ? data.pairs.filter(p => data.top.includes(p.key)) : [];
+  return (
+    <button onClick={onOpen} style={{ all: 'unset', cursor: 'pointer', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: mob ? 10 : 16, padding: mob ? '11px 12px' : '15px 18px', width: '100%',
+      background: '#111827', border: '1px solid #1e2d3d', borderLeft: `3px solid ${sg.c}`, borderRadius: 13 }}>
+      <span style={{ fontFamily: DSANS, fontSize: mob ? 14 : 15.5, fontWeight: 600, color: '#e8edf5', width: mob ? 82 : 150, flexShrink: 0 }}>InterMarket</span>
+      <div style={{ display: 'flex', gap: mob ? 10 : 22, flex: 1 }}>
+        {(mob ? top.slice(0, 2) : top).map(p => {
+          const up = p.regime === 'up', c = up ? '#22c55e' : '#ef4444';
+          return (
+            <div key={p.key} style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}55`, flexShrink: 0 }} />
+                <span style={{ fontFamily: DMONO, fontSize: mob ? 11.5 : 13.5, fontWeight: 600, color: c, whiteSpace: 'nowrap' }}>{up ? '▲ risk-on' : '▼ risk-off'}</span>
+              </div>
+              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{p.label}</div>
+            </div>
+          );
+        })}
+        {!top.length && <span style={{ fontFamily: DSANS, fontSize: 12, color: '#475569' }}>Loading…</span>}
       </div>
-      {top.map(p => {
-        const up = p.regime === 'up';
-        const fresh = p.confirmed && p.fresh;
-        return (
-          <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontFamily: DMONO, fontSize: 11.5, color: '#cbd5e1', width: 78, flexShrink: 0 }}>{p.label}</span>
-            <span style={{ fontFamily: DMONO, fontSize: 11.5, fontWeight: 700, color: up ? '#22c55e' : '#ef4444' }}>{up ? '▲ risk-on' : '▼ risk-off'}</span>
-            {fresh && <span style={{ fontFamily: DSANS, fontSize: 9.5, color: up ? '#22c55e' : '#ef4444' }}>⟳ turned</span>}
-          </div>
-        );
-      })}
-      {!data && <span style={{ fontFamily: DSANS, fontSize: 11, color: '#475569' }}>Loading…</span>}
+      {!mob && <InterMarketMiniSpark data={data} color={sg.c} w={64} h={22} />}
+      <StatusPill status={status} size="sm" />
+      <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
   );
 }
