@@ -769,7 +769,9 @@ async function loadJapanPeLatest(db) {
 async function loadBreadthLatest(db, asOf = null) {
   try {
     const { results } = await db.prepare(
-      `SELECT date, pct_above_200d, pct_above_50d FROM market_breadth${asOf ? ` WHERE date <= '${asOf}'` : ''} ORDER BY date DESC LIMIT 1`
+      `SELECT date, pct_above_200d, pct_above_50d FROM market_breadth
+       WHERE pct_above_200d IS NOT NULL AND pct_above_50d IS NOT NULL${asOf ? ` AND date <= '${asOf}'` : ''}
+       ORDER BY date DESC LIMIT 1`
     ).all();
     return results?.[0] ?? null;
   } catch { return null; }
