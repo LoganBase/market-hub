@@ -1808,6 +1808,40 @@ function SectorRRG() {
   );
 }
 
+// ── Sector Playbook (R6/R8 — card.playbook from /api/scores) ──────────────────
+// RRG-confirmed calls with persistence: overweight / building / neutral /
+// underweight, each carrying its RRG quadrant, weeks-in-state and 60d RS.
+function SectorPlaybook({ playbook }) {
+  if (!playbook || !playbook.length) return null;
+  const CALL = {
+    overweight:  { label: 'OVERWEIGHT',  color: '#22c55e' },
+    building:    { label: 'BUILDING',    color: '#60a5fa' },
+    neutral:     { label: 'NEUTRAL',     color: '#64748b' },
+    underweight: { label: 'UNDERWEIGHT', color: '#ef4444' },
+  };
+  return (
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 16, padding: '18px 20px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+        <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#94a3b8' }}>Sector Playbook</span>
+        <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>RRG-confirmed calls — {`≥`}3wk persistence; defensive strength is a risk signal, never a buy</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {playbook.map((p, i) => {
+          const c = CALL[p.call] || CALL.neutral;
+          return (
+            <div key={p.sym} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: i > 0 ? '1px solid #16202e' : 'none' }}>
+              <span style={{ fontFamily: DSANS, fontSize: 12.5, fontWeight: 600, color: '#e8edf5', width: 128, flexShrink: 0 }}>{p.name}</span>
+              <span style={{ fontFamily: DMONO, fontSize: 11, color: '#64748b', width: 38, flexShrink: 0 }}>{p.sym}</span>
+              <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.05em', color: c.color, border: `1px solid ${c.color}55`, borderRadius: 6, padding: '2px 7px', width: 86, textAlign: 'center', flexShrink: 0 }}>{c.label}</span>
+              <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.35 }}>{p.why}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Sector breakdown table (breadth card — sectorTable from /api/scores) ──
 function SectorBreakdown({ sectorTable }) {
   if (!sectorTable || !sectorTable.length) return null;
@@ -6751,7 +6785,8 @@ function DeepDiveContent({ card, cardId, asOf, chartHeight = 230 }) {
       {cardId === 'sectors' && <SectorsWatchlistChart />}
       {/* sectors-only: cycle-signal ratio charts (Idea 03B) */}
       {cardId === 'sectors' && <SectorRatioCharts />}
-      {/* sectors-only: relative rotation graph (Idea 03A) */}
+      {/* sectors-only: RRG-confirmed playbook calls (R6/R8), then the rotation graph itself */}
+      {cardId === 'sectors' && <SectorPlaybook playbook={card.playbook} />}
       {cardId === 'sectors' && <SectorRRG />}
       {/* credit-only: HYG / LQD / EMB vs 200d three-line chart */}
       {cardId === 'credit' && <CreditChart />}

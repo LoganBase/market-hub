@@ -2131,8 +2131,10 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
 
   const compassScore = round1((cComps.length ? cComps.reduce((a, c) => a + c.value, 0) / cComps.length : 0.5) * 10);
   const compassHigh = compassScore >= 5;
-  const compassTrigger = compassScore > 7.0 ? 'The 2–3 month trend is healthy — favour economically-sensitive stocks (tech, industrials, financials) and emerging markets.'
-    : compassScore < 4.0 ? 'The 2–3 month trend is weakening — shift toward defensive sectors (healthcare, utilities, staples) and raise cash.'
+  // Base text is category-level only; the handler upgrades the healthy branch
+  // with the live RRG playbook's named leaders (W2 fix — no hard-coded sectors).
+  const compassTrigger = compassScore > 7.0 ? 'The 2–3 month trend is healthy — favour economically-sensitive sectors over defensives.'
+    : compassScore < 4.0 ? 'The 2–3 month trend is weakening — shift toward defensive sectors and raise cash.'
     : 'The trend is mixed — hold your current mix; no strong reason to add or cut risk right now.';
 
   // ── C. MACRO ANCHOR (2–3 yr) — Structural Risk Budget ─────────────────────
@@ -2305,6 +2307,176 @@ function buildAggregate(cards) {
     score: `${(weightedPct * 10).toFixed(1)}/10`, label, posture, glow, categories, regimeBearish, divergence };
 }
 
+// ── SECTOR RRG + PLAYBOOK (R6/R8) ────────────────────────────────────────────
+// Weekly JdK RS-Ratio / RS-Momentum per sector vs SPY — the same methodology
+// (and numbers) as /api/sector-cycle, so the playbook always matches the RRG
+// chart the user sees. The expensive trail computation is KV-cached per UTC
+// day; the calls themselves are recomputed fresh from live quotes each request.
+const RRG_SECTORS = [
+  { sym: 'XLK',  name: 'Technology',       type: 'cyclical'  },
+  { sym: 'XLY',  name: 'Consumer Disc.',   type: 'cyclical'  },
+  { sym: 'XLC',  name: 'Comm. Services',   type: 'cyclical'  },
+  { sym: 'XLI',  name: 'Industrials',      type: 'cyclical'  },
+  { sym: 'XLF',  name: 'Financials',       type: 'cyclical'  },
+  { sym: 'XLE',  name: 'Energy',           type: 'cyclical'  },
+  { sym: 'XLB',  name: 'Materials',        type: 'cyclical'  },
+  { sym: 'XLV',  name: 'Health Care',      type: 'defensive' },
+  { sym: 'XLP',  name: 'Consumer Staples', type: 'defensive' },
+  { sym: 'XLU',  name: 'Utilities',        type: 'defensive' },
+  { sym: 'XLRE', name: 'Real Estate',      type: 'defensive' },
+];
+
+// Duplicated from sector-cycle.js (source of truth for the methodology) — Pages
+// Functions can't share module code across endpoint files.
+function rrgEwm(values, span) {
+  const alpha = 2 / (span + 1);
+  let s = null;
+  return values.map(v => {
+    if (v == null) return null;
+    s = s == null ? v : alpha * v + (1 - alpha) * s;
+    return s;
+  });
+}
+function rrgWeekStart(dateStr) {
+  const d   = new Date(dateStr + 'T12:00:00Z');
+  const dow = d.getUTCDay();
+  const offset = dow === 0 ? 6 : dow - 1;
+  return new Date(d.getTime() - offset * 86400000).toISOString().slice(0, 10);
+}
+
+// Compute (or fetch from KV) the weekly RRG trails + 60d relative strength.
+async function loadSectorRRG(db, kv) {
+  if (!db) return null;
+  const todayUTC = new Date().toISOString().slice(0, 10);
+  try {
+    if (kv) {
+      const cached = await kv.get('rrg-playbook:v1', 'json');
+      if (cached && cached.computed === todayUTC) return cached.sectors;
+    }
+  } catch { /* cache miss is fine */ }
+
+  try {
+    const start = new Date();
+    start.setDate(start.getDate() - 730);   // EWM(26) warm-up, same as sector-cycle.js
+    const startStr = start.toISOString().slice(0, 10);
+    const allSyms = ['SPY', ...RRG_SECTORS.map(s => s.sym)];
+    const placeholders = allSyms.map(() => '?').join(',');
+    const { results } = await db.prepare(`
+      SELECT dp.date, dp.symbol, dp.close
+      FROM daily_prices dp
+      INNER JOIN (
+        SELECT DISTINCT date FROM daily_prices WHERE symbol = 'SPY' AND date >= ?
+      ) d ON dp.date = d.date
+      WHERE dp.symbol IN (${placeholders})
+      ORDER BY dp.date ASC
+    `).bind(startStr, ...allSyms).all();
+
+    const byDate = {};
+    for (const row of results) {
+      if (!byDate[row.date]) byDate[row.date] = {};
+      byDate[row.date][row.symbol] = row.close;
+    }
+    const allDates = Object.keys(byDate).sort();
+    if (allDates.length < 100) return null;
+
+    const weekMap = {};
+    for (const date of allDates) {
+      const wk = rrgWeekStart(date);
+      if (!weekMap[wk]) weekMap[wk] = {};
+      weekMap[wk].lastDate = date;
+    }
+    const weekKeys = Object.keys(weekMap).sort();
+
+    const sectors = RRG_SECTORS.map(sec => {
+      const rsLine = allDates.map(d => {
+        const s = byDate[d]?.[sec.sym], spy = byDate[d]?.SPY;
+        return (s != null && spy != null && spy !== 0) ? s / spy : null;
+      });
+      const e10 = rrgEwm(rsLine, 10), e26 = rrgEwm(rsLine, 26);
+      const rsRatioByDate = {};
+      for (let i = 0; i < allDates.length; i++) {
+        if (e10[i] != null && e26[i] != null && e26[i] !== 0) rsRatioByDate[allDates[i]] = (e10[i] / e26[i]) * 100;
+      }
+      const weeklyRSRatio = weekKeys.map(wk => rsRatioByDate[weekMap[wk].lastDate] ?? null);
+      const e5mom = rrgEwm(weeklyRSRatio, 5);
+      const rsMom = weeklyRSRatio.map((v, i) =>
+        (v != null && e5mom[i] != null && e5mom[i] !== 0) ? (v / e5mom[i]) * 100 : null);
+
+      const TRAIL = 13;
+      const from = Math.max(0, weekKeys.length - TRAIL);
+      const trail = weekKeys.slice(from).map((wk, i) => ({
+        week: wk,
+        rsRatio: weeklyRSRatio[from + i] != null ? +weeklyRSRatio[from + i].toFixed(3) : null,
+        rsMom:   rsMom[from + i] != null ? +rsMom[from + i].toFixed(3) : null,
+      }));
+
+      // 60-trading-day relative strength vs SPY (R6 uses this, not the 20d spread)
+      let rs60 = null;
+      if (allDates.length >= 61) {
+        const dN = allDates[allDates.length - 1], d60 = allDates[allDates.length - 61];
+        const s0 = byDate[d60]?.[sec.sym], sN = byDate[dN]?.[sec.sym];
+        const p0 = byDate[d60]?.SPY,       pN = byDate[dN]?.SPY;
+        if (s0 && sN && p0 && pN) rs60 = +(((sN / s0 - 1) - (pN / p0 - 1)) * 100).toFixed(1);
+      }
+      return { sym: sec.sym, name: sec.name, type: sec.type, trail, rs60 };
+    });
+
+    try { if (kv) await kv.put('rrg-playbook:v1', JSON.stringify({ computed: todayUTC, sectors }), { expirationTtl: 172800 }); } catch { /* non-fatal */ }
+    return sectors;
+  } catch { return null; }
+}
+
+// R6+R8: turn RRG trails into calls with multi-week persistence.
+//   Overweight   = cyclical + RRG leading/improving + above 200d + positive 60d RS,
+//                  held >= PERSIST_WKS consecutive weeks (R8) — carries its age.
+//   Building     = qualifies but hasn't persisted yet (shown, not yet a call).
+//   Underweight  = RRG weakening/lagging + below 200d, held >= PERSIST_WKS weeks.
+//   Defensive leadership is never an overweight — it's a risk signal (see W3 fix).
+const PERSIST_WKS = 3;
+function buildSectorPlaybook(rrg, q) {
+  if (!rrg) return null;
+  const quadOf = (r, m) => r >= 100 ? (m >= 100 ? 'leading' : 'weakening') : (m >= 100 ? 'improving' : 'lagging');
+  const groupOf = (qd) => (qd === 'leading' || qd === 'improving') ? 'strong' : 'weak';
+  const out = rrg.map(sec => {
+    const t = (sec.trail || []).filter(p => p.rsRatio != null && p.rsMom != null);
+    if (!t.length) return null;
+    const cur = t[t.length - 1];
+    const rrgQuad = quadOf(cur.rsRatio, cur.rsMom);
+    const curGroup = groupOf(rrgQuad);
+    let weeks = 0;
+    for (let i = t.length - 1; i >= 0 && groupOf(quadOf(t[i].rsRatio, t[i].rsMom)) === curGroup; i--) weeks++;
+
+    const d = q[sec.sym];
+    const abv200 = !!(d?.price && d?.sma200 && d.price > d.sma200);
+    const rs60 = sec.rs60;
+    const rsStr = rs60 != null ? (rs60 >= 0 ? '+' : '') + rs60 + '%' : '—';
+
+    let call, why;
+    const owQualified = sec.type === 'cyclical' && curGroup === 'strong' && abv200 && rs60 != null && rs60 > 0;
+    const uwQualified = curGroup === 'weak' && !abv200;
+    if (owQualified && weeks >= PERSIST_WKS) {
+      call = 'overweight';
+      why = `RRG ${rrgQuad} ${weeks}wk · >200d · 60d RS ${rsStr}`;
+    } else if (owQualified) {
+      call = 'building';
+      why = `RRG ${rrgQuad} ${weeks}/${PERSIST_WKS}wk — confirms at ${PERSIST_WKS}`;
+    } else if (uwQualified && weeks >= PERSIST_WKS) {
+      call = 'underweight';
+      why = `RRG ${rrgQuad} ${weeks}wk · <200d`;
+    } else if (sec.type === 'defensive' && curGroup === 'strong') {
+      call = 'neutral';
+      why = `Defensive in RRG ${rrgQuad} — risk-off signal, never a buy call`;
+    } else {
+      call = 'neutral';
+      why = `RRG ${rrgQuad} ${weeks}wk · ${abv200 ? '>200d' : '<200d'} · 60d RS ${rsStr}`;
+    }
+    return { sym: sec.sym, name: sec.name, type: sec.type, call, rrg: rrgQuad, weeks, rs60, abv200, why };
+  }).filter(Boolean);
+  const rank = { overweight: 0, building: 1, neutral: 2, underweight: 3 };
+  out.sort((a, b) => (rank[a.call] - rank[b.call]) || ((b.rs60 ?? -99) - (a.rs60 ?? -99)));
+  return out;
+}
+
 // ── ACTION DIRECTIVE (R1) — the single reconciled instruction ─────────────────
 // Composes the quadrant, Entry Window, Anchor sizing, sector leaders and hard
 // invalidation levels (R5) into one answer-first output. Pure composition of
@@ -2343,16 +2515,34 @@ function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries) {
     headline = 'Both timeframes point down — cut exposure toward defensives and cash.';
   }
 
-  // ── WHERE — cyclical leaders in trend, from the live sector data ────────────
-  const over  = sectorsCard?.overweights  ?? [];
-  const under = sectorsCard?.underweights ?? [];
+  // ── WHERE — RRG-confirmed leaders (R6/R8) when the playbook is available; ───
+  // falls back to the sector card's 20d leaders when it isn't.
+  const pb = sectorsCard?.playbook ?? null;
+  let over, under, whereNote;
+  if (pb) {
+    const rsStr = (v) => v != null ? (v >= 0 ? '+' : '') + v + '%' : '—';
+    const pbOver  = pb.filter(p => p.call === 'overweight');
+    const pbBuild = pb.filter(p => p.call === 'building');
+    const pbUnder = pb.filter(p => p.call === 'underweight');
+    over  = pbOver.map(p => ({ sym: p.sym, name: p.name, relPerf: p.rs60, weeks: p.weeks }));
+    under = pbUnder.map(p => ({ sym: p.sym, name: p.name, relPerf: p.rs60, weeks: p.weeks }));
+    const buildStr = pbBuild.length
+      ? ` Building (not yet confirmed): ${pbBuild.map(p => `${p.name} (${p.weeks}/${PERSIST_WKS}wk)`).join(', ')}.`
+      : '';
+    whereNote = over.length
+      ? `Adds go to RRG-confirmed leaders: ${pbOver.map(p => `${p.name} (${p.sym} — ${p.rrg} ${p.weeks}wk, 60d RS ${rsStr(p.rs60)})`).join(', ')}.` + buildStr
+      : `No sector holds RRG-confirmed leadership (${PERSIST_WKS}wk persistence required) — add via the broad index or wait.` + buildStr;
+  } else {
+    over  = sectorsCard?.overweights  ?? [];
+    under = sectorsCard?.underweights ?? [];
+    whereNote = over.length
+      ? `Adds go to cyclical leaders in trend: ${over.map(s => `${s.name} (${s.sym} ${s.relPerf >= 0 ? '+' : ''}${s.relPerf}% vs SPY)`).join(', ')}.`
+      : 'No cyclical sector currently qualifies (in trend + outperforming) — add via the broad index or wait.';
+  }
   const where = defensive
     ? { overweights: [], underweights: under,
         note: 'Sector overweights suspended — favour defensives, quality and cash until the trend repairs.' }
-    : { overweights: over, underweights: under,
-        note: over.length
-          ? `Adds go to cyclical leaders in trend: ${over.map(s => `${s.name} (${s.sym} ${s.relPerf >= 0 ? '+' : ''}${s.relPerf}% vs SPY)`).join(', ')}.`
-          : 'No cyclical sector currently qualifies (in trend + outperforming) — add via the broad index or wait.' };
+    : { overweights: over, underweights: under, note: whereNote };
 
   // ── SIZE — the Anchor is the budget, tranches are the schedule ──────────────
   const sizePct = Math.round((matrix.sizingFactor ?? 1) * 100);
@@ -2605,9 +2795,26 @@ export async function onRequest(context) {
 
   // ── HORIZON SCORES ─────────────────────────────────────────────────────────
   const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, scoreHist);
+
+  // R6/R8: RRG playbook — attach to the sectors card so the deep dive can render
+  // it and the directive's WHERE reads from it.
+  const sectorsCard = cards.find(c => c.id === 'sectors');
+  const rrg = await loadSectorRRG(db, kv);
+  const playbook = buildSectorPlaybook(rrg, q);
+  if (sectorsCard && playbook) sectorsCard.playbook = playbook;
+
+  // W2 fix: when the Compass reads healthy, name the actual RRG-confirmed
+  // leaders instead of a hard-coded sector list.
+  if (playbook && horizons.compass.score > 7.0) {
+    const ow = playbook.filter(p => p.call === 'overweight');
+    horizons.compass.trigger = ow.length
+      ? `The 2–3 month trend is healthy — favour the RRG-confirmed leaders: ${ow.map(p => `${p.name} (${p.sym})`).join(', ')}.`
+      : `The 2–3 month trend is healthy, but no sector holds RRG-confirmed leadership yet — broad-index exposure over sector bets.`;
+  }
+
   // R1: the reconciled Action Directive — composed after horizons + cards so it
   // can reference the effective quadrant, Entry Window and live sector leaders.
-  horizons.directive = buildDirective(q, horizons, cards.find(c => c.id === 'sectors'), breadthData, oasSeries);
+  horizons.directive = buildDirective(q, horizons, sectorsCard, breadthData, oasSeries);
 
   const body = JSON.stringify({
     timestamp: new Date().toISOString(),
