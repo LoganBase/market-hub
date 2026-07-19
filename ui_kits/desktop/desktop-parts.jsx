@@ -850,7 +850,7 @@ function HorizonTitle({ title }) {
   );
 }
 
-function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, entryWindow }) {
+function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, entryWindow, governor }) {
   const c = horizonColorH(score);
   const w = Math.max(0, Math.min(100, score * 10));
   return (
@@ -871,6 +871,7 @@ function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, en
       <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.35, minHeight: 30 }}>{trigger}</span>
       {veto && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#ef4444' }}>⚠ VIX BACKWARDATION{vixRatio != null ? ` (${vixRatio})` : ''} — TACTICAL CAPPED</span>}
       {entryWindow && entryWindow.open && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#60a5fa' }}>◈ ENTRY WINDOW OPEN — DAY {entryWindow.daysOpen}</span>}
+      {governor && governor.applied && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#f59e0b' }}>⚠ STRETCH GOVERNOR — CAPPED AT {governor.cap.toFixed(1)} (SPY +{governor.vs200}% vs 200d)</span>}
     </div>
   );
 }
@@ -1029,7 +1030,7 @@ function HorizonHero({ horizons, exec, onOpen }) {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
         <HorizonDial title="Tactical Speedometer" horizon={speedometer.horizon || '2–3 weeks'} score={speedometer.score} level={speedometer.level} trigger={speedometer.trigger} veto={speedometer.veto} vixRatio={speedometer.vixRatio} entryWindow={horizons.entryWindow} />
-        <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} />
+        <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} governor={compass.governor} />
         <AnchorDial anchor={anchor} />
       </div>
       {horizons.directive ? (

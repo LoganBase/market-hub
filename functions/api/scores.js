@@ -2129,11 +2129,30 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
   // diverging from the trend. ±10% YoY maps to the 0/1 bounds.
   cPush('earnings', 'S&P 500 EPS YoY', valn?.epsYoy != null ? clamp01(0.5 + valn.epsYoy / 20) : null, valn?.epsYoy != null ? `${valn.epsYoy >= 0 ? '+' : ''}${valn.epsYoy.toFixed(1)}%` : null);
 
-  const compassScore = round1((cComps.length ? cComps.reduce((a, c) => a + c.value, 0) / cComps.length : 0.5) * 10);
+  let compassScore = round1((cComps.length ? cComps.reduce((a, c) => a + c.value, 0) / cComps.length : 0.5) * 10);
+
+  // Stretch governor (R4): the components clamp hard (vs200 pins at +5%), so an
+  // extended tape reads as maximum health precisely when it should read "late to
+  // add". Mirror the Speedometer's veto pattern: past the Regime card's own
+  // "Extended" band (+10% vs 200d) the score is capped, sliding 8.5 → 7.0 at the
+  // "Overextended" band (+14%). Floor 7.0 stays above the hysteresis enter band
+  // (6.0), so the governor is an honesty correction, never a regime change.
+  const rawCompassScore = compassScore;
+  const stretchV200 = spy?.vs200 ?? null;
+  const governed = stretchV200 != null && stretchV200 > 10;
+  let governorCap = null;
+  if (governed) {
+    governorCap = round1(Math.max(7.0, 8.5 - (stretchV200 - 10) * 0.375));
+    compassScore = Math.min(compassScore, governorCap);
+  }
+  const governor = { applied: governed && rawCompassScore > (governorCap ?? 10), cap: governorCap, vs200: stretchV200 != null ? Math.round(stretchV200 * 10) / 10 : null };
+
   const compassHigh = compassScore >= 5;
   // Base text is category-level only; the handler upgrades the healthy branch
   // with the live RRG playbook's named leaders (W2 fix — no hard-coded sectors).
-  const compassTrigger = compassScore > 7.0 ? 'The 2–3 month trend is healthy — favour economically-sensitive sectors over defensives.'
+  const compassTrigger = governor.applied
+    ? `The 2–3 month trend is healthy but SPY is extended (${pct(stretchV200, 1)} vs 200d) — score capped at ${governorCap.toFixed(1)}; a confirmed trend this stretched is late to add, not maximum-health.`
+    : compassScore > 7.0 ? 'The 2–3 month trend is healthy — favour economically-sensitive sectors over defensives.'
     : compassScore < 4.0 ? 'The 2–3 month trend is weakening — shift toward defensive sectors and raise cash.'
     : 'The trend is mixed — hold your current mix; no strong reason to add or cut risk right now.';
 
@@ -2211,7 +2230,7 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
 
   return {
     speedometer: { score: speedScore, level: speedState, rawLevel: speedHigh ? 'high' : 'low', components: sComps, veto, vixRatio: vixRatio != null ? Math.round(vixRatio * 100) / 100 : null, trigger: speedTrigger, horizon: '2–3 weeks' },
-    compass:     { score: compassScore, level: compassState, rawLevel: compassHigh ? 'high' : 'low', components: cComps, trigger: compassTrigger, horizon: '2–3 months' },
+    compass:     { score: compassScore, rawScore: rawCompassScore, governor, level: compassState, rawLevel: compassHigh ? 'high' : 'low', components: cComps, trigger: compassTrigger, horizon: '2–3 months' },
     anchor:      { score: anchorScore, zone, sizingFactor, percentiles: riskPcts, note: anchorNote, trigger: anchorTrigger, horizon: '2–3 years' },
     matrix:      {
       quadrant, label: QLABEL[quadrant], guidance: GUIDANCE[quadrant], sizingFactor,
@@ -2804,8 +2823,9 @@ export async function onRequest(context) {
   if (sectorsCard && playbook) sectorsCard.playbook = playbook;
 
   // W2 fix: when the Compass reads healthy, name the actual RRG-confirmed
-  // leaders instead of a hard-coded sector list.
-  if (playbook && horizons.compass.score > 7.0) {
+  // leaders instead of a hard-coded sector list. Never clobber a stretch-governor
+  // message (R4) — "late to add" outranks sector suggestions.
+  if (playbook && horizons.compass.score > 7.0 && !horizons.compass.governor?.applied) {
     const ow = playbook.filter(p => p.call === 'overweight');
     horizons.compass.trigger = ow.length
       ? `The 2–3 month trend is healthy — favour the RRG-confirmed leaders: ${ow.map(p => `${p.name} (${p.sym})`).join(', ')}.`
