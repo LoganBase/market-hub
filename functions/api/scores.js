@@ -1361,8 +1361,15 @@ function buildSectors(q, sectorWeights) {
       ? `Defensives are outpacing cyclicals by ${Math.abs(spread).toFixed(1)}% (20d avg vs SPY) — flight-to-safety rotation; risk-off conditions prevailing.`
       : `Cyclicals and defensives near parity (${spreadStr} spread, 20d avg vs SPY) — no clear directional rotation signal; the market is digesting.`;
     const sCounts = ` ${cycBull}/${cycRows.length} cyclical and ${defBull}/${defRows.length} defensive sectors are above their 200d SMA.`;
-    const sLeaders = top3.length
-      ? ` Leading sectors: ${top3.map(r => r.name).join(', ')} — overweight these in a risk-on environment.`
+    // Only cyclicals in trend are overweight candidates — a defensive sector
+    // leading the tape is a safe-haven bid (risk-off warning), never a buy call.
+    const cycLeaders = top3.filter(r => r.type === 'cyclical' && r.abv200);
+    const defLeaders = top3.filter(r => r.type === 'defensive');
+    const sLeaders = cycLeaders.length
+      ? ` Leading cyclicals: ${cycLeaders.map(r => r.name).join(', ')} — overweight these in a risk-on environment.`
+      : '';
+    const sDefBid = defLeaders.length
+      ? ` ${defLeaders.map(r => r.name).join(', ')} leading the tape is a safe-haven bid — a risk-off warning, not a buy signal.`
       : '';
     const sLaggards = bot3.length
       ? ` Lagging sectors: ${bot3.map(r => r.name).join(', ')} — underweight until they recapture their 200d SMA.`
@@ -1370,7 +1377,7 @@ function buildSectors(q, sectorWeights) {
     const sAction = spread > 0
       ? ' Action: tilt toward cyclicals and sectors with positive 200d + relative-performance alignment.'
       : ' Action: shift toward defensive sectors and quality; wait for cyclical breadth to recover before adding risk.';
-    return sRotation + sCounts + sLeaders + sLaggards + sAction;
+    return sRotation + sCounts + sLeaders + sDefBid + sLaggards + sAction;
   })();
 
   const stats = [
