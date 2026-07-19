@@ -17,7 +17,7 @@
 
 const CORS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
 
-export function buildFingerprint(scores) {
+export function buildFingerprint(scores, stockRecs = null) {
   const h = scores?.horizons ?? {};
   const sectors = (scores?.cards ?? []).find(c => c.id === 'sectors');
   const pb = sectors?.playbook ?? [];
@@ -39,6 +39,9 @@ export function buildFingerprint(scores) {
       compass:     h.compass?.score ?? null,
       anchor:      h.anchor?.score ?? null,
     },
+    // Portfolio Engine: per-stock recommendations join the fingerprint so a
+    // holding changing state emails through the same pipeline.
+    stockRecs: stockRecs ?? null,
   };
 }
 
@@ -79,6 +82,19 @@ export function diffStates(prev, next) {
   const uw = setDiff(prev.underweights, next.underweights);
   for (const s of uw.added)   changes.push({ kind: 'sector', sev: 'info', text: `Sector call NEW: ${s} underweight` });
   for (const s of uw.removed) changes.push({ kind: 'sector', sev: 'info', text: `Sector call ENDED: ${s} no longer underweight` });
+
+  // Per-stock recommendation changes (Portfolio Engine). Entering the extremes
+  // (sell / strong-buy) is high severity; everything else is info.
+  if (prev.stockRecs && next.stockRecs) {
+    const syms = new Set([...Object.keys(prev.stockRecs), ...Object.keys(next.stockRecs)]);
+    for (const s of syms) {
+      const a = prev.stockRecs[s], b = next.stockRecs[s];
+      if (a === b) continue;
+      if (a && b) changes.push({ kind: 'stock', sev: (b === 'sell' || b === 'strong-buy') ? 'high' : 'info', text: `${s}: ${a.toUpperCase()} → ${b.toUpperCase()}` });
+      else if (!a && b) changes.push({ kind: 'stock', sev: 'info', text: `${s}: new position — engine reads ${b.toUpperCase()}` });
+      else changes.push({ kind: 'stock', sev: 'info', text: `${s}: position closed (was ${a.toUpperCase()})` });
+    }
+  }
   return changes;
 }
 
@@ -105,7 +121,25 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({ error: 'no horizons in scores response' }), { status: 502, headers: CORS });
   }
 
-  const next = buildFingerprint(scores);
+  // Portfolio Engine: latest recommendation per holding (absent until synced)
+  let stockRecs = null;
+  try {
+    const db = env.DB;
+    if (db) {
+      const { results = [] } = await db.prepare(
+        `SELECT s.symbol, s.recommendation FROM stock_signals s
+         INNER JOIN (SELECT symbol, MAX(date) AS d FROM stock_signals GROUP BY symbol) m
+           ON s.symbol = m.symbol AND s.date = m.d
+         INNER JOIN portfolio_positions p ON p.symbol = s.symbol`
+      ).all();
+      if (results.length) {
+        stockRecs = {};
+        for (const r of results) stockRecs[r.symbol] = r.recommendation;
+      }
+    }
+  } catch { /* portfolio engine not populated yet */ }
+
+  const next = buildFingerprint(scores, stockRecs);
   let prev = null;
   try { prev = await kv.get('alert-state:last', 'json'); } catch { /* treat as first run */ }
   const changes = diffStates(prev, next);

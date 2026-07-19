@@ -393,7 +393,20 @@ export async function onRequest(context) {
   // under Cloudflare's 50 subrequest-per-invocation limit (each symbol
   // makes at least one Yahoo Finance fetch).
   const startIdx = Math.max(0, parseInt(url.searchParams.get('start') || '0', 10));
-  const batch    = ALL_SYMBOLS.slice(startIdx);
+
+  // Portfolio Engine: holdings from the IBKR mirror join the refresh universe
+  // automatically — a dynamic union, so the symbol list has one source of truth
+  // for portfolio names and buying a new stock needs no code change.
+  let symbols = ALL_SYMBOLS;
+  try {
+    const { results: pf = [] } = await db.prepare(
+      `SELECT DISTINCT symbol FROM portfolio_positions WHERE asset_class IN ('STK','ETF')`
+    ).all();
+    const extra = pf.map(r => r.symbol).filter(s => s && !ALL_SYMBOLS.includes(s));
+    if (extra.length) symbols = [...ALL_SYMBOLS, ...extra];
+  } catch { /* portfolio tables not created yet — static list only */ }
+
+  const batch    = symbols.slice(startIdx);
 
   const results   = [];
   let totalAdded  = 0;

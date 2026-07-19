@@ -2041,6 +2041,7 @@ function ToggleShell() {
   const TABS = [
     { id: 'workspace', label: 'Workspace', sub: 'List + live deep-dive' },
     { id: 'glance', label: 'Glance', sub: 'Scan, then drill in' },
+    { id: 'portfolio', label: 'Portfolio', sub: 'Live IBKR positions + per-stock engine' },
   ];
   return (
     <div style={{ minHeight: '100vh', background: '#080c14' }}>
@@ -2062,7 +2063,7 @@ function ToggleShell() {
           ))}
         </div>
       </div>
-      {mode === 'workspace' ? <OptionWorkspace D={D} /> : <OptionGlancePage D={D} open={glanceOpen} onSetOpen={setGlanceOpen} />}
+      {mode === 'portfolio' ? <PortfolioPage /> : mode === 'workspace' ? <OptionWorkspace D={D} /> : <OptionGlancePage D={D} open={glanceOpen} onSetOpen={setGlanceOpen} />}
       <DisclaimerFooter />
     </div>
   );

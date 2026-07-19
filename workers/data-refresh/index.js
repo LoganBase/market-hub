@@ -215,6 +215,28 @@ async function runRefresh(env) {
   const theme = await callHub(`${siteUrl}/api/brief-theme`, hubToken);
   console.log(`[data-refresh] brief-theme — ${theme.error ? 'error: ' + theme.error : theme.skipped ? 'skipped: ' + theme.skipped : 'theme: ' + (theme.theme || '?')}`);
 
+  // Portfolio Engine: mirror the IBKR account, refresh per-stock data
+  // (fundamentals / news / sentiment, batched), then compute the per-stock
+  // signal engine — all BEFORE state-alert so recommendation changes are in
+  // tonight's fingerprint. A missing FLEX config logs and skips gracefully.
+  console.log(`[data-refresh] running portfolio-sync`);
+  const pfSync = await callHub(`${siteUrl}/api/portfolio-sync`, hubToken);
+  if (pfSync.error) {
+    console.warn('[data-refresh] portfolio-sync skipped/error:', pfSync.error);
+  } else {
+    console.log(`[data-refresh] portfolio-sync done — ${pfSync.synced} positions, NAV ${pfSync.nav ?? '?'}`);
+    let pfStart = 0;
+    for (let i = 0; i < 8; i++) {          // up to 64 holdings
+      const pr = await callHub(`${siteUrl}/api/portfolio-refresh?start=${pfStart}`, hubToken);
+      if (pr.error) { console.error('[data-refresh] portfolio-refresh error:', pr.error); break; }
+      console.log(`[data-refresh] portfolio-refresh batch @${pfStart} — ${pr.batch ?? 0} symbols`);
+      if (pr.next == null) break;
+      pfStart = pr.next;
+    }
+    const ps = await callHub(`${siteUrl}/api/portfolio-signals`, hubToken);
+    console.log(`[data-refresh] portfolio-signals — ${ps.error ? 'error: ' + ps.error : ps.skipped ? 'skipped: ' + ps.reason : ps.computed + ' holdings scored (gate ' + (ps.marketGate ?? 'none') + ')'}`);
+  }
+
   // R13: state-change alert — fingerprint the post-refresh decision state
   // (quadrant, Entry Window, veto, Anchor zone, sector calls) and email only
   // when something actually changed. First run just stores the baseline.

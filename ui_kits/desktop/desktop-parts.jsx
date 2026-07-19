@@ -7044,3 +7044,211 @@ function DeepDiveContent({ card, cardId, asOf, chartHeight = 230 }) {
 }
 
 Object.assign(window, { DSIG, DMONO, DSANS, postureColorD, HorizonHero, HorizonRailMini, HorizonDial, AnchorDial, InteractionMatrix, DeepChartLg, RegimeTimeline, StatusPill, SparkD, StatBoxes, IndicatorTable, SectorBreakdown, CountryTable, BreadthStatBoxes, NyseBreadthChart, NyseAdidChart, SectorBreadthChart, LeadershipPriceChart, EquitiesMASummary, EquitiesFocusChart, EquitiesChart, CommoditiesWatchlistChart, ValuationsChart, YieldChart, YieldSpreadChart, CurrencyChart, CurrencyRegimeChart, CpiHistoryChart, SectorRatioCharts, SectorRRG, VIXTermStructure, VIXHistoryChart, COTPositioning, PositioningDeepDive, DeepDiveContent });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── PORTFOLIO ENGINE (Phase 1: live IBKR mirror; signal columns light up as
+//    later phases populate stock_signals). Self-contained section — InterMarket
+//    pattern: own hook, own components, no adapter/GLANCE involvement.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function usePortfolio() {
+  const [data, setData] = useStateD(null);
+  const [err, setErr] = useStateD(null);
+  useEffectD(() => {
+    let alive = true;
+    fetch('/api/portfolio').then(r => r.json())
+      .then(d => { if (!alive) return; if (d && d.positions) setData(d); else setErr((d && d.error) || 'bad payload'); })
+      .catch(e => { if (alive) setErr(e.message); });
+    return () => { alive = false; };
+  }, []);
+  return { data, err };
+}
+
+const REC_META = {
+  'strong-buy': { label: 'STRONG BUY', c: '#22c55e' },
+  'accumulate': { label: 'ACCUMULATE', c: '#60a5fa' },
+  'hold':       { label: 'HOLD',       c: '#94a3b8' },
+  'reduce':     { label: 'REDUCE',     c: '#f59e0b' },
+  'sell':       { label: 'SELL',       c: '#ef4444' },
+};
+
+function RecPill({ rec, days }) {
+  const m = rec ? REC_META[rec] : null;
+  if (!m) return <span style={{ fontFamily: DMONO, fontSize: 11, color: '#475569' }}>—</span>;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.05em', color: m.c, border: `1px solid ${m.c}55`, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>{m.label}</span>
+      {days != null && <span style={{ fontFamily: DMONO, fontSize: 10, color: '#64748b' }}>{days}d</span>}
+    </span>
+  );
+}
+
+// Small T/F/S signal chip. score 0-10 → color; explicit unavailable states dim.
+function SigChip({ label, score, state }) {
+  const unavailable = state === 'unavailable' || (score == null && state !== 'no-news');
+  const noNews = state === 'no-news';
+  const c = unavailable ? '#334155' : noNews ? '#64748b' : score >= 6.5 ? '#22c55e' : score >= 4 ? '#94a3b8' : '#ef4444';
+  const txt = unavailable ? '·' : noNews ? '—' : score != null ? score.toFixed(1) : '·';
+  return (
+    <span title={label + ': ' + (unavailable ? 'unavailable' : noNews ? 'no news' : txt)}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: DMONO, fontSize: 10.5, color: c, opacity: unavailable ? 0.6 : 1 }}>
+      <span style={{ fontFamily: DSANS, fontSize: 9, fontWeight: 700, color: '#475569' }}>{label}</span>{txt}
+    </span>
+  );
+}
+
+const pfUsd = (n, dec = 0) => n == null ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const pfPct = (n) => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+
+function PortfolioHeader({ account, meta }) {
+  const box = (label, val, tone) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#64748b' }}>{label}</span>
+      <span style={{ fontFamily: DMONO, fontSize: 18, fontWeight: 700, color: tone || '#e8edf5' }}>{val}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 34px', alignItems: 'flex-end', background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 16, padding: '16px 20px' }}>
+      {box('Net Asset Value', pfUsd(account && account.nav))}
+      {box('Cash', pfUsd(account && account.cash))}
+      {box('Day Δ', pfPct(account && account.navChangePct), account && account.navChangePct > 0 ? '#22c55e' : account && account.navChangePct < 0 ? '#ef4444' : undefined)}
+      <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+        <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b' }}>IBKR mirror · {(meta && meta.reportDate) || '—'}</span>
+        {meta && meta.state === 'positions-only' && <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#f59e0b' }}>signals not yet computed</span>}
+      </div>
+    </div>
+  );
+}
+
+function PositionsTable({ positions, sel, onSel, compact }) {
+  const th = { fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#475569', textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap' };
+  const td = { fontFamily: DMONO, fontSize: 11.5, textAlign: 'right', padding: '8px 8px', whiteSpace: 'nowrap' };
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+        <thead><tr>
+          <th style={{ ...th, textAlign: 'left' }}>Position</th>
+          {!compact && <th style={th}>Qty</th>}
+          {!compact && <th style={th}>Avg Cost</th>}
+          <th style={th}>Mark</th>
+          <th style={th}>P&amp;L</th>
+          <th style={{ ...th, textAlign: 'center' }}>T · F · S</th>
+          <th style={{ ...th, textAlign: 'left' }}>Recommendation</th>
+        </tr></thead>
+        <tbody>
+          {positions.map(p => {
+            const s = p.signals;
+            const active = sel === p.symbol;
+            return (
+              <tr key={p.symbol} onClick={() => onSel && onSel(p.symbol)}
+                style={{ borderTop: '1px solid #16202e', cursor: 'pointer', background: active ? '#141f2e' : 'transparent' }}>
+                <td style={{ ...td, textAlign: 'left' }}>
+                  <span style={{ fontFamily: DSANS, fontSize: 12.5, fontWeight: 700, color: '#e8edf5' }}>{p.symbol}</span>
+                  {!compact && <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginLeft: 8 }}>{(p.description || '').slice(0, 22)}</span>}
+                </td>
+                {!compact && <td style={{ ...td, color: '#94a3b8' }}>{p.quantity}</td>}
+                {!compact && <td style={{ ...td, color: '#94a3b8' }}>{p.avgCost != null ? p.avgCost.toFixed(2) : '—'}</td>}
+                <td style={{ ...td, color: '#cbd5e1' }}>{p.markPrice != null ? p.markPrice.toFixed(2) : '—'}</td>
+                <td style={{ ...td, color: p.pnlPct > 0 ? '#22c55e' : p.pnlPct < 0 ? '#ef4444' : '#94a3b8' }}>{pfPct(p.pnlPct)}</td>
+                <td style={{ ...td, textAlign: 'center' }}>
+                  <span style={{ display: 'inline-flex', gap: 9 }}>
+                    <SigChip label="T" score={s && s.tech && s.tech.score} state={s && s.tech && s.tech.status} />
+                    <SigChip label="F" score={s && s.fund && s.fund.score} state={s && s.fund && s.fund.bias === 'unavailable' ? 'unavailable' : null} />
+                    <SigChip label="S" score={s && s.sent && s.sent.score} state={s && s.sent && s.sent.status === 'no-news' ? 'no-news' : null} />
+                  </span>
+                </td>
+                <td style={{ ...td, textAlign: 'left' }}>
+                  <RecPill rec={s && s.recommendation} days={s && s.daysInState} />
+                  {s && s.marketGate && ['TRIM', 'REDUCE', 'HOLD'].includes(s.marketGate) && <span title={'tempered by market directive ' + s.marketGate} style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>⚠</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Basic detail pane (Phase 1: position facts + whatever signals exist; the deep
+// breakdown — fundamentals snapshot, news list, rec history — lands in Phase 5).
+function PositionDetail({ p }) {
+  if (!p) return (
+    <div style={{ fontFamily: DSANS, fontSize: 12.5, color: '#64748b', padding: 24, textAlign: 'center' }}>Select a position</div>
+  );
+  const s = p.signals;
+  const row = (label, val) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: '1px solid #16202e' }}>
+      <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#64748b' }}>{label}</span>
+      <span style={{ fontFamily: DMONO, fontSize: 12, color: '#cbd5e1' }}>{val}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+        <span style={{ fontFamily: DSANS, fontSize: 20, fontWeight: 800, color: '#e8edf5' }}>{p.symbol}</span>
+        <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#64748b' }}>{p.description}</span>
+        <span style={{ marginLeft: 'auto' }}><RecPill rec={s && s.recommendation} days={s && s.daysInState} /></span>
+      </div>
+      {row('Quantity', p.quantity)}
+      {row('Avg cost', p.avgCost != null ? '$' + p.avgCost.toFixed(2) : '—')}
+      {row('Mark', p.markPrice != null ? '$' + p.markPrice.toFixed(2) : '—')}
+      {row('Market value', pfUsd(p.marketValue))}
+      {row('Unrealized P&L', (p.unrealizedPnl != null ? pfUsd(p.unrealizedPnl) : '—') + (p.pnlPct != null ? '  (' + pfPct(p.pnlPct) + ')' : ''))}
+      {s && row('Technical', s.tech && s.tech.score != null ? s.tech.score.toFixed(1) + '/10' : (s.tech && s.tech.status) || '—')}
+      {s && row('Fundamental', s.fund && s.fund.score != null ? s.fund.score.toFixed(1) + '/10 · ' + s.fund.bias + (s.fund.asOf ? ' · as of ' + s.fund.asOf : '') : (s.fund && s.fund.bias) || '—')}
+      {s && row('Sentiment', s.sent && s.sent.score != null ? s.sent.score.toFixed(1) + '/10' : (s.sent && s.sent.status) || '—')}
+      {s && s.note && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45, marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 10 }}>{s.note}</div>}
+      {!s && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b', marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 10 }}>Per-stock signals not yet computed for this holding.</div>}
+    </div>
+  );
+}
+
+function PortfolioPage() {
+  const { data, err } = usePortfolio();
+  const twoPane = useIsMobileD ? !useIsMobileD() : true;
+  const [sel, setSel] = useStateD(null);
+  const panel = { background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 16, padding: '16px 18px' };
+
+  if (err) return (
+    <div style={{ maxWidth: 900, margin: '40px auto', padding: '0 20px', fontFamily: DSANS, color: '#94a3b8' }}>
+      <div style={panel}>Portfolio unavailable: {String(err)}</div>
+    </div>
+  );
+  if (!data) return (
+    <div style={{ maxWidth: 900, margin: '40px auto', padding: '0 20px', fontFamily: DSANS, color: '#64748b' }}>Loading portfolio…</div>
+  );
+  if (data.meta && data.meta.state === 'no-sync') return (
+    <div style={{ maxWidth: 720, margin: '40px auto', padding: '0 20px' }}>
+      <div style={{ ...panel, fontFamily: DSANS, fontSize: 12.5, color: '#94a3b8', lineHeight: 1.6 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#e8edf5', marginBottom: 8 }}>No portfolio synced yet</div>
+        The IBKR mirror runs nightly via the Flex Web Service. One-time setup: create an Activity Flex Query
+        (Open Positions + NAV sections) in IBKR Client Portal, enable the Flex Web Service token, and set
+        <span style={{ fontFamily: DMONO }}> FLEX_TOKEN</span> / <span style={{ fontFamily: DMONO }}>FLEX_QUERY_ID</span> in
+        the Cloudflare Pages environment. Then trigger <span style={{ fontFamily: DMONO }}>/api/portfolio-sync</span> or wait for the nightly run.
+      </div>
+    </div>
+  );
+
+  const selPos = data.positions.find(p => p.symbol === sel) || null;
+  return (
+    <div style={{ maxWidth: 1160, margin: '22px auto 60px', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <PortfolioHeader account={data.account} meta={data.meta} />
+      {twoPane ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 330px', gap: 16, alignItems: 'start' }}>
+          <div style={panel}><PositionsTable positions={data.positions} sel={sel} onSel={setSel} /></div>
+          <div style={{ ...panel, position: 'sticky', top: 74 }}><PositionDetail p={selPos} /></div>
+        </div>
+      ) : sel ? (
+        <div style={panel}>
+          <button onClick={() => setSel(null)} style={{ all: 'unset', cursor: 'pointer', fontFamily: DSANS, fontSize: 11.5, color: '#64748b', marginBottom: 10 }}>← All positions</button>
+          <PositionDetail p={selPos} />
+        </div>
+      ) : (
+        <div style={panel}><PositionsTable positions={data.positions} sel={sel} onSel={setSel} compact /></div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { PortfolioPage, PositionsTable, PositionDetail, RecPill, SigChip, usePortfolio });
