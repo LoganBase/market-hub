@@ -1951,6 +1951,75 @@ function computeDeltas(current, previous) {
   return out;
 }
 
+// ── SCORE HISTORY (for matrix hysteresis replay) ──────────────────────────────
+// Recent daily speedometer/compass scores, ascending. The matrix state machine
+// replays these on every request so quadrant hysteresis/persistence is stateless.
+// `asOf` is regex-validated in the handler before reaching here.
+async function loadScoreHistoryRecent(db, asOf = null, limit = 40) {
+  try {
+    const { results } = await db.prepare(
+      `SELECT date, speedometer, compass FROM score_history
+       WHERE speedometer IS NOT NULL AND compass IS NOT NULL${asOf ? ` AND date < '${asOf}'` : ''}
+       ORDER BY date DESC LIMIT ${limit}`
+    ).all();
+    return (results ?? []).reverse();
+  } catch { return []; }
+}
+
+// ── MATRIX DYNAMICS: hysteresis + persistence + Entry Window ──────────────────
+// The raw quadrant (score >= 5 on each axis) flips on noise: 5.1 vs 4.9 is not a
+// regime change, and the Speedometer leads the Compass by only ~2 trading days,
+// so boundary crossings are mostly the same signal disagreeing with itself.
+// Instead: each axis enters 'high' at >= HYST.enter, exits at < HYST.exit, and a
+// new quadrant must hold HYST.persist consecutive sessions before the headline
+// changes. The Entry Window is the validated contrarian signal: an oversold
+// Speedometer (< EW_THRESHOLD) while the Compass trend state holds 'high'.
+const HYST = { enter: 6.0, exit: 4.5, persist: 3 };
+const EW_THRESHOLD = 3.5;
+// Validated Jul 2026 on backfilled score history: oversold Speedometer readings
+// preceded positive forward SPY returns ~69% of the time, ~3× the baseline rate.
+// Re-validate as live history accrues.
+const ENTRY_WINDOW_STATS = '~69% positive follow-through, ~3× baseline (validated Jul 2026)';
+
+function stepHystState(prev, score) {
+  if (prev == null) return score >= 5 ? 'high' : 'low';   // no history: seed at midpoint
+  if (prev === 'high') return score < HYST.exit ? 'low' : 'high';
+  return score >= HYST.enter ? 'high' : 'low';
+}
+
+function quadrantOf(speedHigh, compassHigh) {
+  return speedHigh && compassHigh ? 'add-risk'
+    : speedHigh && !compassHigh ? 'bear-rally'
+    : !speedHigh && compassHigh ? 'accumulate'
+    : 'risk-off';
+}
+
+// Replay the state machine over [history..., today]. Pure + deterministic, so the
+// live handler and the as-of backfill produce identical states for the same data.
+function replayMatrixState(series) {
+  let sState = null, cState = null;
+  let effective = null, pendingQ = null, pendingCount = 0;
+  let ewDays = 0;
+  for (const r of series) {
+    if (r.speedometer == null || r.compass == null) continue;
+    sState = stepHystState(sState, r.speedometer);
+    cState = stepHystState(cState, r.compass);
+    const candidate = quadrantOf(sState === 'high', cState === 'high');
+    if (effective == null || candidate === effective) {
+      if (effective == null) effective = candidate;
+      pendingQ = null; pendingCount = 0;
+    } else if (candidate === pendingQ) {
+      pendingCount++;
+      if (pendingCount >= HYST.persist) { effective = candidate; pendingQ = null; pendingCount = 0; }
+    } else {
+      pendingQ = candidate; pendingCount = 1;
+      if (pendingCount >= HYST.persist) { effective = candidate; pendingQ = null; pendingCount = 0; }
+    }
+    ewDays = (r.speedometer < EW_THRESHOLD && cState === 'high') ? ewDays + 1 : 0;
+  }
+  return { sState, cState, effective, pendingQ, pendingCount, ewDays };
+}
+
 // ── HORIZON SCORES (timeframe-isolated) ───────────────────────────────────────
 // Three independent scores, each aligned to a real execution horizon, so that a
 // 2-week momentum reading is never blended with a 10-year valuation reading.
@@ -1972,7 +2041,7 @@ function horizonAvgRet20(q, syms) {
 }
 const round1 = (x) => Math.round(x * 10) / 10;
 
-function buildHorizons(q, breadthData, valn, fred) {
+function buildHorizons(q, breadthData, valn, fred, histRows = []) {
   const spy = q['SPY'];
 
   // ── A. TACTICAL SPEEDOMETER (2–3 wk) ──────────────────────────────────────
@@ -2007,10 +2076,7 @@ function buildHorizons(q, breadthData, valn, fred) {
   if (veto) speedScore = Math.min(speedScore, 3.5);
   speedScore = round1(speedScore);
 
-  const speedHigh = speedScore >= 5;
-  const speedTrigger = speedScore > 7.5 ? 'Short-term momentum is strong — a good window to add to positions or lean into risk.'
-    : speedScore < 3.0 ? 'Short-term momentum is weak — consider buying downside protection or trimming exposure.'
-    : 'No clear short-term edge — hold steady and wait for a cleaner signal before trading around positions.';
+  const speedHigh = speedScore >= 5;   // raw (legacy) level — matrix uses hysteresis states below
 
   // ── B. TREND COMPASS (2–3 mo) ─────────────────────────────────────────────
   const cComps = [];
@@ -2085,23 +2151,65 @@ function buildHorizons(q, breadthData, valn, fred) {
     : 'Valuations are around historical averages — no sizing adjustment needed.';
 
   // ── INTERACTION MATRIX (Speedometer × Compass; Anchor sizes the position) ──
-  const quadrant = speedHigh && compassHigh ? 'add-risk'
-    : speedHigh && !compassHigh ? 'bear-rally'
-    : !speedHigh && compassHigh ? 'accumulate'
-    : 'risk-off';
+  // Hysteresis + persistence: replay the state machine over recent score history
+  // plus today, so the effective quadrant only changes after HYST.persist
+  // consecutive sessions. The raw (instantaneous) quadrant is kept for reference.
+  const rawQuadrant = quadrantOf(speedHigh, compassHigh);
+  const series = [
+    ...histRows.map(r => ({ speedometer: r.speedometer, compass: r.compass })),
+    { speedometer: speedScore, compass: compassScore },
+  ];
+  const st = replayMatrixState(series);
+  const quadrant = st.effective ?? rawQuadrant;
+  const speedState = st.sState ?? (speedHigh ? 'high' : 'low');
+  const compassState = st.cState ?? (compassHigh ? 'high' : 'low');
+
+  // ── ENTRY WINDOW — the validated contrarian add signal ─────────────────────
+  // Oversold Speedometer while the Compass trend state holds: historically the
+  // strongest conditions to deploy. The Speedometer mean-reverts, so this — not
+  // strength-chasing — is the tool's flagship BUY timing signal.
+  const entryOpen = speedScore < EW_THRESHOLD && compassState === 'high';
+  const entryWindow = {
+    open: entryOpen,
+    daysOpen: st.ewDays,
+    threshold: EW_THRESHOLD,
+    stats: ENTRY_WINDOW_STATS,
+    note: entryOpen
+      ? `Speedometer ${speedScore.toFixed(1)} < ${EW_THRESHOLD} with the 2–3 month trend intact — historically the strongest add point (${ENTRY_WINDOW_STATS}).`
+      : `Opens when the Speedometer drops below ${EW_THRESHOLD} while the Compass trend state holds — the validated pullback-entry signal.`,
+  };
+
+  // Speedometer trigger — mean-reversion-aware (computed after the Compass state
+  // so oversold readings can be framed as Entry Windows, not just as weakness).
+  const speedTrigger = entryOpen
+    ? `Entry Window: oversold with the 2–3 month trend intact — historically the strongest add point (${ENTRY_WINDOW_STATS}).`
+    : speedScore > 7.5 ? 'Short-term momentum is strong — but this gauge mean-reverts; let winners run and wait for the next Entry Window rather than chasing.'
+    : speedScore < 3.0 ? 'Short-term momentum is weak and the trend is not confirming — consider protection or trimming until either recovers.'
+    : 'No clear short-term edge — hold steady and wait for a cleaner signal before trading around positions.';
+
   const QLABEL = { 'add-risk': 'Add Positions', 'bear-rally': "Don't Add New Positions", 'accumulate': 'Add Positions on Dips', 'risk-off': 'Reduce Positions' };
+  const stretched = spy?.vs200 != null && spy.vs200 > 10;   // Regime card's "Extended — Late to Add" band
   const GUIDANCE = {
-    'add-risk':   'Both the short-term and 2–3 month trends point up — the aligned window to add exposure directly, including into strength.',
+    'add-risk': stretched
+      ? `Both timeframes point up but SPY is extended (${pct(spy.vs200, 1)} vs its 200d) — hold rather than chase; the next Entry Window is the higher-odds add point.`
+      : 'Both the short-term and 2–3 month trends point up — you can add exposure, but the Speedometer mean-reverts: pullback entries (Entry Windows) have historically beaten adds into strength.',
     'bear-rally': 'The short-term is bouncing but the 2–3 month trend is broken — hold off on new positions and use strength to trim, not to chase.',
-    'accumulate': 'The 2–3 month trend is intact while the short-term has pulled back — lean into the weakness to build positions on the dips.',
+    'accumulate': 'The 2–3 month trend is intact while the short-term has pulled back — the highest-conviction add zone. Deploy on Entry Windows (Speedometer < ' + EW_THRESHOLD + ').',
     'risk-off':   'Both timeframes point down — cut overall exposure and favour defensive positions and cash.',
   };
 
   return {
-    speedometer: { score: speedScore, level: speedHigh ? 'high' : 'low', components: sComps, veto, vixRatio: vixRatio != null ? Math.round(vixRatio * 100) / 100 : null, trigger: speedTrigger, horizon: '2–3 weeks' },
-    compass:     { score: compassScore, level: compassHigh ? 'high' : 'low', components: cComps, trigger: compassTrigger, horizon: '2–3 months' },
+    speedometer: { score: speedScore, level: speedState, rawLevel: speedHigh ? 'high' : 'low', components: sComps, veto, vixRatio: vixRatio != null ? Math.round(vixRatio * 100) / 100 : null, trigger: speedTrigger, horizon: '2–3 weeks' },
+    compass:     { score: compassScore, level: compassState, rawLevel: compassHigh ? 'high' : 'low', components: cComps, trigger: compassTrigger, horizon: '2–3 months' },
     anchor:      { score: anchorScore, zone, sizingFactor, percentiles: riskPcts, note: anchorNote, trigger: anchorTrigger, horizon: '2–3 years' },
-    matrix:      { quadrant, label: QLABEL[quadrant], guidance: GUIDANCE[quadrant], sizingFactor, speedLevel: speedHigh ? 'high' : 'low', compassLevel: compassHigh ? 'high' : 'low' },
+    matrix:      {
+      quadrant, label: QLABEL[quadrant], guidance: GUIDANCE[quadrant], sizingFactor,
+      speedLevel: speedState, compassLevel: compassState,
+      raw: { quadrant: rawQuadrant },
+      pending: st.pendingQ ? { quadrant: st.pendingQ, label: QLABEL[st.pendingQ], daysConfirmed: st.pendingCount, daysRequired: HYST.persist } : null,
+      hysteresis: { enter: HYST.enter, exit: HYST.exit, persistDays: HYST.persist, basis: histRows.length ? 'history' : 'today-only' },
+    },
+    entryWindow,
   };
 }
 
@@ -2191,7 +2299,7 @@ function buildAggregate(cards) {
 // ── HANDLER ───────────────────────────────────────────────────────────────────
 // Assemble the valn/fred bundles from raw loader outputs and compute the horizons.
 // Shared by the live handler and the as-of backfill so they stay identical.
-function computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries) {
+function computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, histRows = []) {
   const valn = {
     cape:    capeP?.value,    capePct:    capeP?.pct,
     buffett: buffettP?.value, buffettPct: buffettP?.pct,
@@ -2208,13 +2316,13 @@ function computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSer
     else                 { fedFundsRisk = 0.5;  fedFundsDir = 'On Hold'; }
   }
   const fred = { oas: oasSeries, realYield: realYieldSeries?.[0]?.value ?? null, fedFundsRisk, fedFundsDir };
-  return buildHorizons(q, breadthData, valn, fred);
+  return buildHorizons(q, breadthData, valn, fred, histRows);
 }
 
 // Horizons-only, as-of a past date, for the Historical Scorecard backfill.
 // Token-gated in the handler. Pure D1 (no Yahoo fallback).
 async function horizonsAsOf(db, asOf) {
-  const [q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries] = await Promise.all([
+  const [q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, histRows] = await Promise.all([
     loadFromD1(db, asOf),
     loadBreadthLatest(db, asOf),
     loadPercentile(db, 'shiller_data', 'cape', asOf),
@@ -2224,8 +2332,9 @@ async function horizonsAsOf(db, asOf) {
     loadFredSeries(db, 'BAMLH0A0HYM2', 250, asOf),
     loadFredSeries(db, 'DFII10', 5, asOf),
     loadFredSeries(db, 'DFEDTARU', 60, asOf),
+    loadScoreHistoryRecent(db, asOf),
   ]);
-  const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries);
+  const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, histRows);
   return new Response(JSON.stringify({ asOf, source: 'd1', horizons }), {
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
   });
@@ -2302,12 +2411,18 @@ export async function onRequest(context) {
     }
   }
 
-  const [regimeCtx, commCtx, creditCtx, epsMom] = await Promise.all([
+  const [regimeCtx, commCtx, creditCtx, epsMom, scoreHistRaw] = await Promise.all([
     db ? loadRegimeContext(db) : Promise.resolve(null),
     db ? loadCommoditiesContext(db) : Promise.resolve(null),
     db ? loadCreditContext(db) : Promise.resolve(null),
     db ? loadEpsMomentum(db) : Promise.resolve(null),
+    db ? loadScoreHistoryRecent(db) : Promise.resolve([]),
   ]);
+  // Drop any history row for the current data date — after the nightly snapshot
+  // runs, today's row exists in score_history and would otherwise be replayed
+  // twice (once from history, once as the live value appended by buildHorizons).
+  const dataDate = q['SPY']?.latestDate ?? null;
+  const scoreHist = dataDate ? scoreHistRaw.filter(r => r.date < dataDate) : scoreHistRaw;
 
   const realYield = realYieldSeries?.[0]?.value ?? null;
 
@@ -2369,7 +2484,7 @@ export async function onRequest(context) {
   agg.scoreDirection = scoreDirection;
 
   // ── HORIZON SCORES ─────────────────────────────────────────────────────────
-  const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries);
+  const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, scoreHist);
 
   const body = JSON.stringify({
     timestamp: new Date().toISOString(),

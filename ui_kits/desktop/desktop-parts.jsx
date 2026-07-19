@@ -850,7 +850,7 @@ function HorizonTitle({ title }) {
   );
 }
 
-function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio }) {
+function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, entryWindow }) {
   const c = horizonColorH(score);
   const w = Math.max(0, Math.min(100, score * 10));
   return (
@@ -870,6 +870,7 @@ function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio }) 
       </div>
       <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.35, minHeight: 30 }}>{trigger}</span>
       {veto && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#ef4444' }}>⚠ VIX BACKWARDATION{vixRatio != null ? ` (${vixRatio})` : ''} — TACTICAL CAPPED</span>}
+      {entryWindow && entryWindow.open && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#60a5fa' }}>◈ ENTRY WINDOW OPEN — DAY {entryWindow.daysOpen}</span>}
     </div>
   );
 }
@@ -907,17 +908,19 @@ function InteractionMatrix({ matrix }) {
   // rows: Speed HIGH (top), Speed LOW (bottom); cols: Compass HIGH (left), Compass LOW (right)
   const rows = [['add-risk', 'bear-rally'], ['accumulate', 'risk-off']];
   const cell = (q) => {
-    const active = q === matrix.quadrant;
+    const active  = q === matrix.quadrant;
+    const pending = !active && matrix.pending && matrix.pending.quadrant === q;
     const m = QMETA[q];
     return (
       <div key={q} style={{
         background: active ? `${m.color}1a` : '#0a1119',
-        border: `1px solid ${active ? m.color : '#1e2d3d'}`,
+        border: `1px ${pending ? 'dashed' : 'solid'} ${active || pending ? m.color : '#1e2d3d'}`,
         borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 3,
         boxShadow: active ? `0 0 16px ${m.color}33` : 'none', minHeight: 52, justifyContent: 'center',
       }}>
         <span style={{ fontFamily: DSANS, fontSize: 12.5, fontWeight: 700, color: active ? m.color : '#64748b' }}>{m.label}</span>
         {active && <span style={{ fontFamily: DSANS, fontSize: 9.5, fontWeight: 700, letterSpacing: '.08em', color: m.color }}>◄ CURRENT</span>}
+        {pending && <span style={{ fontFamily: DSANS, fontSize: 9.5, fontWeight: 700, letterSpacing: '.08em', color: m.color, opacity: .85 }}>◌ CONFIRMING {matrix.pending.daysConfirmed}/{matrix.pending.daysRequired}</span>}
       </div>
     );
   };
@@ -944,6 +947,7 @@ function InteractionMatrix({ matrix }) {
         <span style={{ color: QMETA[matrix.quadrant].color, fontWeight: 700 }}>{matrix.label}: </span>
         {matrix.guidance}
         {` The Macro Anchor suggests sizing any positions at ${Math.round((matrix.sizingFactor ?? 1) * 100)}% of normal.`}
+        {matrix.hysteresis && <span style={{ color: '#64748b' }}>{` Quadrant changes confirm after ${matrix.hysteresis.persistDays} sessions (enter ≥ ${matrix.hysteresis.enter.toFixed(1)}, exit < ${matrix.hysteresis.exit.toFixed(1)}) — 1–2 day flickers don't move the headline.`}</span>}
       </div>
     </div>
   );
@@ -980,7 +984,7 @@ function HorizonHero({ horizons, exec, onOpen }) {
         <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>tactical · trend · structural</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
-        <HorizonDial title="Tactical Speedometer" horizon={speedometer.horizon || '2–3 weeks'} score={speedometer.score} level={speedometer.level} trigger={speedometer.trigger} veto={speedometer.veto} vixRatio={speedometer.vixRatio} />
+        <HorizonDial title="Tactical Speedometer" horizon={speedometer.horizon || '2–3 weeks'} score={speedometer.score} level={speedometer.level} trigger={speedometer.trigger} veto={speedometer.veto} vixRatio={speedometer.vixRatio} entryWindow={horizons.entryWindow} />
         <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} />
         <AnchorDial anchor={anchor} />
       </div>
@@ -989,7 +993,15 @@ function HorizonHero({ horizons, exec, onOpen }) {
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: qc, boxShadow: `0 0 7px ${qc}`, flexShrink: 0 }} />
           <span style={{ fontFamily: DSANS, fontSize: 14, fontWeight: 700, color: qc }}>{matrix.label}</span>
           <span style={{ fontFamily: DSANS, fontSize: 12.5, color: '#94a3b8' }}>· size {Math.round((matrix.sizingFactor ?? 1) * 100)}% of normal</span>
+          {matrix.pending && <span style={{ fontFamily: DSANS, fontSize: 12, color: '#94a3b8' }}>· shifting → <span style={{ color: (QC[matrix.pending.quadrant] || '#94a3b8'), fontWeight: 600 }}>{matrix.pending.label}</span> ({matrix.pending.daysConfirmed}/{matrix.pending.daysRequired} days)</span>}
           {onOpen && <span style={{ marginLeft: 'auto', fontFamily: DSANS, fontSize: 11.5, fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap' }}>Matrix &amp; history →</span>}
+        </div>
+      )}
+      {horizons.entryWindow && horizons.entryWindow.open && (
+        <div style={{ borderTop: '1px solid #0d1e35', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#60a5fa', boxShadow: '0 0 6px #60a5fa', flexShrink: 0 }} />
+          <span style={{ fontFamily: DSANS, fontSize: 11.5, fontWeight: 700, color: '#60a5fa', letterSpacing: '.04em', flexShrink: 0 }}>ENTRY WINDOW</span>
+          <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.4 }}>{horizons.entryWindow.note}</span>
         </div>
       )}
       {exec && exec.regimeBearish && (
