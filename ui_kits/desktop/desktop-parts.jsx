@@ -1091,6 +1091,13 @@ function HorizonHero({ horizons, exec, onOpen }) {
           <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.4 }}>{horizons.entryWindow.note}</span>
         </div>
       )}
+      {exec && exec.sourceNote && (
+        <div style={{ borderTop: '1px solid #2d1a00', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px #f59e0b', flexShrink: 0 }} />
+          <span style={{ fontFamily: DSANS, fontSize: 11.5, fontWeight: 700, color: '#f59e0b', letterSpacing: '.04em', flexShrink: 0 }}>DATA NOTICE</span>
+          <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.4 }}>{exec.sourceNote}</span>
+        </div>
+      )}
       {exec && exec.regimeBearish && (
         <div style={{ borderTop: '1px solid #2d1a00', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px #f59e0b', flexShrink: 0 }} />

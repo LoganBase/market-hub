@@ -212,7 +212,7 @@ async function loadRegimeContext(db) {
     const v    = r0.vs200_pct;
     const bull = v >= 0;
 
-    const [pctRow, durRow] = await Promise.all([
+    const [pctRow, durRow, spanRow] = await Promise.all([
       db.prepare(
         `SELECT ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM indicators WHERE symbol='SPY')) AS pct
          FROM indicators WHERE symbol='SPY' AND vs200_pct <= ?`
@@ -223,6 +223,7 @@ async function loadRegimeContext(db) {
         : `SELECT COUNT(*) AS days FROM indicators WHERE symbol='SPY' AND vs200_pct < 0
            AND date > COALESCE((SELECT MAX(date) FROM indicators WHERE symbol='SPY' AND vs200_pct >= 0), '1900-01-01')`
       ).first(),
+      db.prepare(`SELECT MIN(date) AS since FROM indicators WHERE symbol='SPY' AND vs200_pct IS NOT NULL`).first(),
     ]);
 
     // 5-day deltas \u2014 direction helper: >threshold='up', <-threshold='down', else='flat'
@@ -243,6 +244,7 @@ async function loadRegimeContext(db) {
       percentile: pctRow?.pct ?? null,
       duration:   durRow?.days ?? null,
       velocity:   r0.roc10 ?? null,
+      since:      spanRow?.since ?? null,
       bull,
       deltas: {
         v200:        dir(v200Delta, 0.3),    // SPY Regime / Stretch Risk / Percentile Rank
@@ -404,9 +406,11 @@ function buildRegime(q, ctx) {
 
     let ctxStr = '';
     if (ctx) {
-      const { percentile, duration, velocity } = ctx;
+      const { percentile, duration, velocity, since } = ctx;
       if (percentile != null) {
-        ctxStr += ` Current stretch sits in the ${ordinalSuffix(percentile)} percentile of all historical readings`;
+        // R14: percentile claims carry their series depth — this is indicator
+        // history, not all of market history.
+        ctxStr += ` Current stretch sits in the ${ordinalSuffix(percentile)} percentile of indicator history${since ? ` (since ${String(since).slice(0, 4)})` : ''}`;
         ctxStr += percentile >= 90 ? ' \u2014 among the most extended readings on record.'
           : percentile >= 70 ? ', a historically elevated level.'
           : percentile <= 10 ? ' \u2014 among the most oversold readings on record.'
@@ -432,7 +436,7 @@ function buildRegime(q, ctx) {
     const velStr  = velocity != null ? (velocity >= 0 ? '+' : '') + velocity.toFixed(1) + '%' : '\u2014';
     const velTone = velocity == null ? null : velocity > 0.05 ? 'pos' : velocity < -0.05 ? 'neg' : null;
     return [
-      ['Percentile Rank',    percentile != null ? ordinalSuffix(percentile) : '\u2014',  'of all historical days',                  percentile != null && percentile >= 70 ? 'pos' : percentile != null && percentile <= 30 ? 'neg' : null],
+      ['Percentile Rank',    percentile != null ? ordinalSuffix(percentile) : '\u2014',  ctx.since ? `of indicator days since ${String(ctx.since).slice(0, 4)}` : 'of recorded indicator days',                  percentile != null && percentile >= 70 ? 'pos' : percentile != null && percentile <= 30 ? 'neg' : null],
       ['Regime Duration',    duration   != null ? String(duration) : '\u2014',           ctxBull ? 'days above 200d SMA' : 'days below 200d SMA', null],
       ['Extension Velocity', velStr,                                                 '10d Rate of Change of stretch',           velTone],
     ];
@@ -446,9 +450,11 @@ function buildLeadership(q, ctx) {
   const ivw  = q['IVW'],  ive  = q['IVE'];
   if (!spy || !rsp) return placeholderCard(2, 'Leadership', 'The Quality Check');
 
-  // 20-day return \u2014 falls back to daily changePct when price20d unavailable
+  // 20-day return. R14: no silent fallback to the daily change \u2014 when the 20d
+  // history is missing the read is null and the row says so, instead of quietly
+  // grading breadth on a single session.
   function ret20(s) {
-    return s?.price20d ? (s.price / s.price20d - 1) * 100 : s?.changePct ?? null;
+    return s?.price20d ? (s.price / s.price20d - 1) * 100 : null;
   }
   // 20-day return as of 5 trading days ago \u2014 for spread delta computation
   function ret20at5(s) {
@@ -459,9 +465,9 @@ function buildLeadership(q, ctx) {
   const qqew20 = ret20(qqew), qqq20 = ret20(qqq);
   const ivw20  = ret20(ivw),  ive20 = ret20(ive);
 
-  const rspLead    = rsp20 != null && spy20  != null ? rsp20  > spy20  : rsp.changePct > spy.changePct;
-  const qqewLead   = qqew20 != null && qqq20 != null ? qqew20 > qqq20  : (qqew && qqq ? qqew.changePct > qqq.changePct : null);
-  const growthLead = ivw20  != null && ive20  != null ? ivw20  > ive20  : (ivw && ive ? ivw.changePct > ive.changePct : null);
+  const rspLead    = rsp20 != null && spy20  != null ? rsp20  > spy20  : null;
+  const qqewLead   = qqew20 != null && qqq20 != null ? qqew20 > qqq20  : null;
+  const growthLead = ivw20  != null && ive20  != null ? ivw20  > ive20  : null;
 
   const rspSpread   = rsp20  != null && spy20  != null ? rsp20  - spy20  : null;
   const qqewSpread  = qqew20 != null && qqq20  != null ? qqew20 - qqq20  : null;
@@ -488,8 +494,8 @@ function buildLeadership(q, ctx) {
       value: rspSpread != null
         ? `${pct(rspSpread, 1)}\nRSP\u00a0${pct(rsp20, 1)}\u2003SPY\u00a0${pct(spy20, 1)}`
         : (rsp20 != null ? `RSP\u00a0${pct(rsp20, 1)}` : '\u2014'),
-      condition: rspLead ? 'Breadth Expanding \u2014 Broad Bias' : 'Rally Narrowing \u2014 Concentration Risk',
-      status: rspLead ? 'bullish' : 'bearish',
+      condition: rspLead == null ? '20d History Unavailable \u2014 No Breadth Read' : (rspLead ? 'Breadth Expanding \u2014 Broad Bias' : 'Rally Narrowing \u2014 Concentration Risk'),
+      status: rspLead == null ? 'neutral' : (rspLead ? 'bullish' : 'bearish'),
     },
     {
       label: 'Tech Breadth',
@@ -515,7 +521,9 @@ function buildLeadership(q, ctx) {
   ];
   const leaderNote = (() => {
     // Sentence 1: Market Breadth \u2014 direction only; specific spread shown in Metrics box (close-based)
-    const breadthStr = rspLead
+    const breadthStr = rspLead == null
+      ? `Breadth read unavailable \u2014 20-day history is missing for RSP/SPY, so no equal-weight comparison is made.`
+      : rspLead
       ? `Equal-weight RSP is outperforming cap-weight SPY \u2014 broad market participation is healthy.`
       : `Cap-weight SPY is outperforming equal-weight RSP \u2014 the rally is narrowing; concentration risk is rising.`;
 
@@ -900,11 +908,15 @@ async function loadPercentile(db, table, col, asOf = null) {
       `SELECT
          ${cur} AS current,
          CAST((SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL${cut} AND ${col} <= ${cur}) AS REAL)
-           / (SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL${cut}) AS pct`;
+           / (SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL${cut}) AS pct,
+         (SELECT COUNT(*) FROM ${table} WHERE ${col} IS NOT NULL${cut}) AS n,
+         (SELECT MIN(date) FROM ${table} WHERE ${col} IS NOT NULL${cut}) AS since`;
     const { results } = await db.prepare(sql).all();
     const r = results?.[0];
     if (!r || r.current == null) return null;
-    return { value: r.current, pct: r.pct };
+    // n/since let percentile claims carry their series depth (R14) — a 99th
+    // percentile of 155 years is a different statement than one of 18 months.
+    return { value: r.current, pct: r.pct, n: r.n, since: r.since };
   } catch { return null; }
 }
 
@@ -1279,16 +1291,22 @@ function buildSectors(q, sectorWeights) {
   };
 
   const spy   = q['SPY'];
-  const ret20 = s => s?.price20d ? (s.price / s.price20d - 1) * 100 : s?.changePct ?? null;
+  // R14: no changePct fallback — missing 20d history yields a null relPerf and
+  // the sector is excluded from ranking/averages rather than silently graded 0.
+  const ret20 = s => s?.price20d ? (s.price / s.price20d - 1) * 100 : null;
   const spy20 = ret20(spy);
 
   const allSectors = Object.entries(SECTOR_META).map(([sym, meta]) => {
     const d = q[sym];
     if (!d || !spy) return null;
-    const relPerf = (ret20(d) ?? 0) - (spy20 ?? 0);
+    const r20 = ret20(d);
+    const relPerf = (r20 != null && spy20 != null) ? r20 - spy20 : null;
     const abv200  = !!(d.price && d.sma200 && d.price > d.sma200);
     let condition, status;
-    if (meta.type === 'cyclical') {
+    if (relPerf == null) {
+      condition = `${abv200 ? 'In Trend' : 'Below 200d'} — 20d Data Unavailable`;
+      status    = 'neutral';
+    } else if (meta.type === 'cyclical') {
       if (abv200 && relPerf > 0) {
         condition = `Leader (${pct(relPerf, 1)} vs SPY) \u2014 Overweight`;
         status    = 'bullish';
@@ -1324,12 +1342,13 @@ function buildSectors(q, sectorWeights) {
   const offenseLeading = cycBull > defBull;
 
   // Card status: avg 20d relative performance (vs SPY) \u2014 cyclicals vs defensives
-  const avg   = arr => arr.length ? arr.reduce((s, r) => s + r.relPerf, 0) / arr.length : 0;
+  // R14: null relPerf rows (missing 20d history) are excluded, not counted as zero.
+  const avg   = arr => { const v = arr.filter(r => r.relPerf != null); return v.length ? v.reduce((s, r) => s + r.relPerf, 0) / v.length : 0; };
   const spread = avg(cycRows) - avg(defRows);   // positive = cyclicals leading
   const sectStatus = spread > 1 ? 'bullish' : spread < -1 ? 'bearish' : 'neutral';
 
   // Top 3 leaders + bottom 3 laggards, best→worst order, no duplicates
-  const sortedAll = [...allSectors].sort((a, b) => b.relPerf - a.relPerf);
+  const sortedAll = allSectors.filter(r => r.relPerf != null).sort((a, b) => b.relPerf - a.relPerf);
   const top3   = sortedAll.slice(0, 3);
   const bot3   = sortedAll.slice(-3);
   const seen   = new Set();
@@ -1351,7 +1370,9 @@ function buildSectors(q, sectorWeights) {
   });
 
   const rows    = curated.map(mapRow);
-  const allRows = sortedAll.map(mapRow);
+  // Unrankable sectors (null relPerf) still appear in the full list, at the end,
+  // carrying their explicit '20d Data Unavailable' condition.
+  const allRows = [...sortedAll, ...allSectors.filter(r => r.relPerf == null)].map(mapRow);
 
   const spreadStr = (spread >= 0 ? '+' : '') + spread.toFixed(1) + '%';
   const sectNote = (() => {
@@ -1567,7 +1588,7 @@ function buildCommodities(q, commCtx) {
     const pctTone = percentile == null ? null : (percentile >= 80 || percentile <= 20) ? 'neg' : null;
     const velTone = velocity  == null ? null : velocity > 0.05 ? 'pos' : velocity < -0.05 ? 'neg' : null;
     stats.push(
-      ['USCI Percentile Rank',    percentile != null ? ordinalSuffix(percentile) : '—', 'of all historical days', pctTone],
+      ['USCI Percentile Rank',    percentile != null ? ordinalSuffix(percentile) : '—', 'of recorded indicator days', pctTone],
       ['USCI Days in Zone',       duration   != null ? String(duration) : '—',          'consecutive days here',  null],
       ['USCI Extension Velocity', velStr,                                                     '10d ROC of stretch',     velTone],
     );
@@ -2039,10 +2060,11 @@ const CYCLICALS  = ['XLK', 'XLF', 'XLI', 'XLY', 'XLB', 'XLE'];
 const DEFENSIVES = ['XLP', 'XLV', 'XLU', 'XLRE'];
 const SECTORS_11 = ['XLK', 'XLF', 'XLV', 'XLC', 'XLY', 'XLI', 'XLP', 'XLE', 'XLB', 'XLRE', 'XLU'];
 
-// 20-day return for a symbol (falls back to daily changePct)
+// 20-day return for a symbol. R14: no silent fallback — a 1-day change is not a
+// 20-day return; missing history yields null and the component is simply skipped.
 function horizonRet20(s) {
   if (!s) return null;
-  return s.price20d ? (s.price / s.price20d - 1) * 100 : (s.changePct ?? null);
+  return s.price20d ? (s.price / s.price20d - 1) * 100 : null;
 }
 function horizonAvgRet20(q, syms) {
   const vals = syms.map(s => horizonRet20(q[s])).filter(v => v != null);
@@ -2161,9 +2183,12 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
   // Score = 10 × (1 − avgRisk): high score = low structural risk = room to extend.
   const riskPcts = [];
   const rPush = (key, label, risk01, detail) => { if (risk01 != null) riskPcts.push({ key, label, value: risk01, detail }); };
-  rPush('cape', 'Shiller CAPE', valn?.capePct, valn?.cape != null ? valn.cape.toFixed(1) : null);
-  rPush('buffett', 'Buffett Indicator', valn?.buffettPct, valn?.buffett != null ? `${valn.buffett.toFixed(0)}%` : null);
-  rPush('fwdpe', 'Forward P/E', valn?.fwdPePct, valn?.fwdPe != null ? valn.fwdPe.toFixed(1) : null);
+  // R14: each percentile detail carries its series depth — a CAPE percentile of
+  // 155 years and a forward-P/E percentile of a few decades are not equal claims.
+  const sinceStr = (s) => s ? ` · since ${String(s).slice(0, 4)}` : '';
+  rPush('cape', 'Shiller CAPE', valn?.capePct, valn?.cape != null ? valn.cape.toFixed(1) + sinceStr(valn.capeSince) : null);
+  rPush('buffett', 'Buffett Indicator', valn?.buffettPct, valn?.buffett != null ? `${valn.buffett.toFixed(0)}%` + sinceStr(valn.buffettSince) : null);
+  rPush('fwdpe', 'Forward P/E', valn?.fwdPePct, valn?.fwdPe != null ? valn.fwdPe.toFixed(1) + sinceStr(valn.fwdPeSince) : null);
   if (fred?.realYield != null) rPush('realyield', '10Y Real Yield', clamp01(fred.realYield / 3), `${fred.realYield.toFixed(2)}%`);
   if (fred?.fedFundsRisk != null) rPush('fedfunds', 'Fed Funds Direction', fred.fedFundsRisk, fred.fedFundsDir ?? null);
 
@@ -2174,7 +2199,7 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
   const capePctile = valn?.capePct != null ? Math.round(valn.capePct * 100) : null;
   const sizePctTxt = Math.round(sizingFactor * 100);
   const anchorNote = capePctile != null
-    ? `Stocks are more expensive than ${capePctile}% of history. That's not a signal to sell — but there's less cushion if things go wrong, so keep positions near ${sizePctTxt}% of normal size rather than changing direction.`
+    ? `Stocks are more expensive than ${capePctile}% of recorded history${valn?.capeSince ? ` (CAPE series since ${String(valn.capeSince).slice(0, 4)})` : ''}. That's not a signal to sell — but there's less cushion if things go wrong, so keep positions near ${sizePctTxt}% of normal size rather than changing direction.`
     : 'Long-run valuations set how much cushion you have — use this to scale position size, not to time entries and exits.';
   const anchorTrigger = anchorScore > 8.0 ? 'Valuations are historically cheap — you can size up and extend risk with a wide margin of safety.'
     : anchorScore < 3.0 ? 'Valuations are historically expensive — keep positions smaller than normal and hold extra cash as a buffer.'
@@ -2805,9 +2830,9 @@ function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYi
 // Shared by the live handler and the as-of backfill so they stay identical.
 function computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, histRows = []) {
   const valn = {
-    cape:    capeP?.value,    capePct:    capeP?.pct,
-    buffett: buffettP?.value, buffettPct: buffettP?.pct,
-    fwdPe:   fwdPeP?.value,   fwdPePct:   fwdPeP?.pct,
+    cape:    capeP?.value,    capePct:    capeP?.pct,    capeSince:    capeP?.since ?? null,
+    buffett: buffettP?.value, buffettPct: buffettP?.pct, buffettSince: buffettP?.since ?? null,
+    fwdPe:   fwdPeP?.value,   fwdPePct:   fwdPeP?.pct,   fwdPeSince:   fwdPeP?.since ?? null,
     epsYoy:  epsMom?.yoy ?? null,
   };
   // Fed funds direction from DFEDTARU: hiking = tightening = more structural risk.
@@ -2986,6 +3011,14 @@ export async function onRequest(context) {
 
   const agg = buildAggregate(cards);
   agg.scoreDirection = scoreDirection;
+  // R14: say so when we are not running on the primary data path. 'd1+yahoo'
+  // means some symbols were stale/missing in D1; pure 'yahoo' means D1 was
+  // unreachable and every number on the page is provisional.
+  if (source !== 'd1') {
+    agg.sourceNote = source === 'yahoo'
+      ? 'D1 unavailable — all data is being served from the live Yahoo fallback; treat every score as provisional.'
+      : `${missing.length} of ${ALL_SYMBOLS.length} symbols are being served from the live fallback (stale or missing in D1).`;
+  }
 
   // ── HORIZON SCORES ─────────────────────────────────────────────────────────
   const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, scoreHist);
