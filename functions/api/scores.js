@@ -2571,12 +2571,73 @@ async function loadAnchorForward(db, kv) {
   } catch { return null; }
 }
 
+// ── RECEIPTS (R12) — the tool's own hit rate, published ───────────────────────
+// Forward SPY returns conditioned on the tool's logged states: each quadrant,
+// the Entry Window condition, and an all-days baseline, over 20 and 60 trading
+// sessions. Computed from score_history × daily_prices; KV-cached per UTC day.
+// Honesty notes ship with the data: backfilled reconstructions before Jun 2026,
+// raw (pre-hysteresis) quadrants before Jul 2026, small samples flagged.
+async function loadReceipts(db, kv) {
+  if (!db) return null;
+  const todayUTC = new Date().toISOString().slice(0, 10);
+  try {
+    if (kv) {
+      const cached = await kv.get('receipts:v1', 'json');
+      if (cached && cached.computed === todayUTC) return cached.receipts;
+    }
+  } catch { /* cache miss is fine */ }
+
+  try {
+    const { results: rows } = await db.prepare(
+      `SELECT h.date, h.speedometer, h.compass, h.quadrant, p.close
+       FROM score_history h
+       JOIN daily_prices p ON p.symbol = 'SPY' AND p.date = h.date
+       WHERE h.speedometer IS NOT NULL AND h.compass IS NOT NULL AND h.quadrant IS NOT NULL
+       ORDER BY h.date ASC`
+    ).all();
+    if (!rows || rows.length < 90) return null;
+
+    const fwd = (i, n) => (i + n < rows.length) ? (rows[i + n].close / rows[i].close - 1) * 100 : null;
+    const buckets = { 'entry-window': [], 'add-risk': [], 'accumulate': [], 'bear-rally': [], 'risk-off': [], 'baseline': [] };
+    for (let i = 0; i < rows.length; i++) {
+      const rec = { f20: fwd(i, 20), f60: fwd(i, 60) };
+      if (rec.f20 == null) continue;                       // too recent to grade at all
+      buckets['baseline'].push(rec);
+      if (buckets[rows[i].quadrant]) buckets[rows[i].quadrant].push(rec);
+      if (rows[i].speedometer < EW_THRESHOLD && rows[i].compass >= 5) buckets['entry-window'].push(rec);
+    }
+
+    const stat = (arr, key) => {
+      const v = arr.map(r => r[key]).filter(x => x != null).sort((a, b) => a - b);
+      if (v.length < 5) return null;                       // nothing quotable
+      return {
+        median: +v[Math.floor(v.length / 2)].toFixed(1),
+        hit: Math.round(v.filter(x => x > 0).length / v.length * 100),
+        n: v.length,
+      };
+    };
+    const LABELS = {
+      'entry-window': 'Entry Window', 'add-risk': 'Add Positions', 'accumulate': 'Add on Dips',
+      'bear-rally': "Don't Add New Positions", 'risk-off': 'Reduce Positions', 'baseline': 'All days (baseline)',
+    };
+    const receipts = {
+      spanStart: rows[0].date, spanEnd: rows[rows.length - 1].date, days: rows.length,
+      buckets: Object.entries(buckets).map(([key, arr]) => ({
+        key, label: LABELS[key], n: arr.length, fwd20: stat(arr, 'f20'), fwd60: stat(arr, 'f60'),
+      })),
+      note: 'Forward SPY price return over 20 / 60 trading sessions from each logged day (overlapping windows). Rows before Jun 2026 are backfilled reconstructions; quadrants before Jul 2026 are the raw pre-hysteresis read. Samples under 30 are quoted but flagged.',
+    };
+    try { if (kv) await kv.put('receipts:v1', JSON.stringify({ computed: todayUTC, receipts }), { expirationTtl: 172800 }); } catch { /* non-fatal */ }
+    return receipts;
+  } catch { return null; }
+}
+
 // ── ACTION DIRECTIVE (R1) — the single reconciled instruction ─────────────────
 // Composes the quadrant, Entry Window, Anchor sizing, sector leaders and hard
 // invalidation levels (R5) into one answer-first output. Pure composition of
 // data already computed — every other surface defers to this. Live handler only
 // (the as-of backfill stores horizon scores, not directives).
-function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield = null) {
+function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield = null, receipts = null) {
   const { matrix, entryWindow, anchor, speedometer, compass } = horizons;
   const spy = q['SPY'];
   const quadrant = matrix.quadrant;
@@ -2718,11 +2779,24 @@ function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYi
     };
   }
 
+  // ── RECEIPT (R12) — what this state has historically delivered ──────────────
+  let receipt = null;
+  if (receipts) {
+    const key = entryWindow.open ? 'entry-window' : quadrant;
+    const b = receipts.buckets.find(x => x.key === key);
+    const base = receipts.buckets.find(x => x.key === 'baseline');
+    if (b?.fwd60 && base?.fwd60) {
+      receipt = `Since ${receipts.spanStart}, "${b.label}" days led to a median ${pct(b.fwd60.median, 1)} SPY move over the next 60 sessions, ${b.fwd60.hit}% positive (n=${b.fwd60.n}${b.fwd60.n < 30 ? ' — small sample' : ''}). Baseline: ${pct(base.fwd60.median, 1)} / ${base.fwd60.hit}%.`;
+    } else if (b) {
+      receipt = `"${b.label}" has n=${b.n} graded days — too few to quote yet (logging since ${receipts.spanStart}).`;
+    }
+  }
+
   return {
     verb, headline, quadrant,
     mode: defensive ? 'reentry' : 'exit',   // how the levels block should be titled
     pending: matrix.pending ?? null,
-    where, size, trigger, invalidations, sleeve,
+    where, size, trigger, invalidations, sleeve, receipt,
   };
 }
 
@@ -2920,7 +2994,8 @@ export async function onRequest(context) {
   // it and the directive's WHERE reads from it.
   // R9: CAPE-decile forward-return bands for the Macro Anchor.
   const sectorsCard = cards.find(c => c.id === 'sectors');
-  const [rrg, anchorFwd] = await Promise.all([loadSectorRRG(db, kv), loadAnchorForward(db, kv)]);
+  const [rrg, anchorFwd, receipts] = await Promise.all([loadSectorRRG(db, kv), loadAnchorForward(db, kv), loadReceipts(db, kv)]);
+  if (receipts) horizons.receipts = receipts;   // R12: rendered by the Market Summary detail
   const playbook = buildSectorPlaybook(rrg, q);
   if (sectorsCard && playbook) sectorsCard.playbook = playbook;
 
@@ -2950,7 +3025,7 @@ export async function onRequest(context) {
 
   // R1: the reconciled Action Directive — composed after horizons + cards so it
   // can reference the effective quadrant, Entry Window and live sector leaders.
-  horizons.directive = buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield);
+  horizons.directive = buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield, receipts);
 
   const body = JSON.stringify({
     timestamp: new Date().toISOString(),

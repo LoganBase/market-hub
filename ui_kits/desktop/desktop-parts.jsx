@@ -1021,6 +1021,7 @@ function ActionDirective({ directive, onOpen }) {
       </Row>
       <Row label="TRIGGER">{directive.trigger}</Row>
       {directive.sleeve && <Row label="PROCEEDS">{directive.sleeve.note}</Row>}
+      {directive.receipt && <Row label="RECEIPT">{directive.receipt}</Row>}
       {inv.length > 0 && (
         <Row label={directive.mode === 'reentry' ? 'RE-ENTRY' : 'INVALIDATE'}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1115,6 +1116,61 @@ function HorizonHero({ horizons, exec, onOpen }) {
   );
 }
 
+// ── Receipts (R12) — the tool's own graded track record ───────────────────────
+// Forward SPY returns conditioned on each logged state, vs the all-days
+// baseline. Small samples are quoted but visibly flagged.
+function ReceiptsPanel({ receipts }) {
+  if (!receipts || !receipts.buckets) return null;
+  const QC = { 'entry-window': '#60a5fa', 'add-risk': '#22c55e', 'accumulate': '#60a5fa', 'bear-rally': '#f59e0b', 'risk-off': '#ef4444', 'baseline': '#94a3b8' };
+  const fmtM = (s) => s ? `${s.median >= 0 ? '+' : ''}${s.median.toFixed(1)}%` : '—';
+  const fmtH = (s) => s ? `${s.hit}%` : '—';
+  const mCol = (s) => s == null ? '#475569' : s.median > 0 ? '#22c55e' : s.median < 0 ? '#ef4444' : '#94a3b8';
+  const th = { fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#475569', textAlign: 'right', padding: '4px 8px' };
+  const td = { fontFamily: DMONO, fontSize: 11.5, textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap' };
+  return (
+    <div style={{ background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 16, padding: '18px 20px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+        <span style={{ fontFamily: DSANS, fontSize: 13, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#94a3b8' }}>Receipts</span>
+        <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>forward SPY by logged state · {receipts.spanStart} → {receipts.spanEnd} · {receipts.days} days</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 480 }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, textAlign: 'left' }}>State</th>
+              <th style={th}>n</th>
+              <th style={th}>20d med</th>
+              <th style={th}>20d hit</th>
+              <th style={th}>60d med</th>
+              <th style={th}>60d hit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {receipts.buckets.map(b => {
+              const small = b.fwd60 && b.fwd60.n < 30;
+              const dim = b.fwd20 == null;
+              return (
+                <tr key={b.key} style={{ borderTop: '1px solid #16202e', opacity: dim ? 0.55 : 1 }}>
+                  <td style={{ ...td, textAlign: 'left', fontFamily: DSANS, fontSize: 12, fontWeight: b.key === 'baseline' ? 400 : 600, color: '#e8edf5' }}>
+                    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: QC[b.key] || '#64748b', marginRight: 7, verticalAlign: 'middle' }} />
+                    {b.label}{small && <span style={{ fontFamily: DSANS, fontSize: 9.5, color: '#f59e0b', marginLeft: 6 }}>low n</span>}
+                  </td>
+                  <td style={{ ...td, color: '#94a3b8' }}>{b.n}</td>
+                  <td style={{ ...td, color: mCol(b.fwd20) }}>{fmtM(b.fwd20)}</td>
+                  <td style={{ ...td, color: '#94a3b8' }}>{fmtH(b.fwd20)}</td>
+                  <td style={{ ...td, color: mCol(b.fwd60) }}>{fmtM(b.fwd60)}</td>
+                  <td style={{ ...td, color: '#94a3b8' }}>{fmtH(b.fwd60)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', lineHeight: 1.45, marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 8 }}>{receipts.note}</div>
+    </div>
+  );
+}
+
 // Market Summary detail (the drill-in): the hero + the full Speedometer x Compass
 // matrix + the Score History chart. Rendered by the Workspace Exec Summary detail
 // and the Glance market-summary page; keeps the landing hero itself lean.
@@ -1124,6 +1180,7 @@ function MarketSummaryDetail({ horizons, exec }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <HorizonHero horizons={horizons} exec={exec} />
       <InteractionMatrix matrix={horizons.matrix} />
+      <ReceiptsPanel receipts={horizons.receipts} />
       <ScoreHistoryChart />
     </div>
   );
