@@ -2496,12 +2496,81 @@ function buildSectorPlaybook(rrg, q) {
   return out;
 }
 
+// ── ANCHOR FORWARD RETURNS (R9) ───────────────────────────────────────────────
+// CAPE-decile-conditional forward total-return CAGRs computed from the tool's
+// own shiller_data (1871+, dividends reinvested monthly). Real returns when the
+// optional cpi column is seeded (seed_shiller.py); honestly labeled nominal
+// until then — same graceful-fallback pattern as the credit card's OAS.
+// KV-cached per UTC day (monthly source data).
+async function loadAnchorForward(db, kv) {
+  if (!db) return null;
+  const todayUTC = new Date().toISOString().slice(0, 10);
+  try {
+    if (kv) {
+      const cached = await kv.get('anchor-forward:v1', 'json');
+      if (cached && cached.computed === todayUTC) return cached.forward;
+    }
+  } catch { /* cache miss is fine */ }
+
+  try {
+    let rows;
+    try {
+      ({ results: rows } = await db.prepare(
+        `SELECT date, price, dividend, cape, cpi FROM shiller_data WHERE price > 0 ORDER BY date ASC`).all());
+    } catch {
+      ({ results: rows } = await db.prepare(
+        `SELECT date, price, dividend, cape FROM shiller_data WHERE price > 0 ORDER BY date ASC`).all());
+    }
+    if (!rows || rows.length < 400) return null;
+    const hasCpi = rows[0].cpi != null && rows[rows.length - 1].cpi != null;
+
+    // Total-return index, dividends (trailing-12m rate) reinvested monthly.
+    const tr = new Array(rows.length);
+    tr[0] = 1;
+    for (let i = 1; i < rows.length; i++) {
+      const p0 = rows[i - 1].price, p1 = rows[i].price, d = rows[i].dividend;
+      tr[i] = (p1 && p0) ? tr[i - 1] * ((p1 + (d ?? 0) / 12) / p0) : tr[i - 1];
+    }
+    const level = (i) => hasCpi && rows[i].cpi ? tr[i] / rows[i].cpi : tr[i];
+
+    // CAPE decile thresholds over the full history.
+    const capes = rows.map(r => r.cape).filter(c => c != null).sort((a, b) => a - b);
+    const decileOf = (c) => {
+      let k = 1;
+      for (let d = 1; d < 10; d++) if (c > capes[Math.floor(capes.length * d / 10) - 1]) k = d + 1;
+      return k;
+    };
+    let curCape = null;
+    for (let i = rows.length - 1; i >= 0 && curCape == null; i--) curCape = rows[i].cape;
+    if (curCape == null) return null;
+    const dec = decileOf(curCape);
+
+    // Forward CAGR distribution for the current decile at a given horizon.
+    const bandFor = (months) => {
+      const arr = [];
+      for (let i = 0; i + months < rows.length; i++) {
+        if (rows[i].cape == null || decileOf(rows[i].cape) !== dec) continue;
+        const a = level(i), b = level(i + months);
+        if (!a || !b) continue;
+        arr.push((Math.pow(b / a, 12 / months) - 1) * 100);
+      }
+      if (arr.length < 24) return null;   // demand a real sample
+      arr.sort((x, y) => x - y);
+      const q = (p) => +arr[Math.min(arr.length - 1, Math.floor(arr.length * p))].toFixed(1);
+      return { p25: q(0.25), median: q(0.5), p75: q(0.75), n: arr.length };
+    };
+    const forward = { cape: +curCape.toFixed(1), decile: dec, basis: hasCpi ? 'real' : 'nominal', h10: bandFor(120), h5: bandFor(60) };
+    try { if (kv) await kv.put('anchor-forward:v1', JSON.stringify({ computed: todayUTC, forward }), { expirationTtl: 172800 }); } catch { /* non-fatal */ }
+    return forward;
+  } catch { return null; }
+}
+
 // ── ACTION DIRECTIVE (R1) — the single reconciled instruction ─────────────────
 // Composes the quadrant, Entry Window, Anchor sizing, sector leaders and hard
 // invalidation levels (R5) into one answer-first output. Pure composition of
 // data already computed — every other surface defers to this. Live handler only
 // (the as-of backfill stores horizon scores, not directives).
-function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries) {
+function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield = null) {
   const { matrix, entryWindow, anchor, speedometer, compass } = horizons;
   const spy = q['SPY'];
   const quadrant = matrix.quadrant;
@@ -2617,11 +2686,37 @@ function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries) {
     });
   }
 
+  // ── DE-RISK SLEEVE (R10) — where reduced exposure goes, shaped by the tool's
+  // own signals: real yields decide how much duration is worth locking, gold's
+  // own trend decides the hedge weight. Only rendered on defensive verbs.
+  let sleeve = null;
+  if (verb === 'TRIM' || verb === 'REDUCE') {
+    const gld = q['GLD'];
+    const goldStrong = gld?.vs200 != null && gld.vs200 > 5;                    // commodities card's safe-haven-bid line
+    const goldWeak   = !!(gld?.price && gld?.sma200 && gld.price < gld.sma200);
+    const lockWorthIt = realYield != null && realYield >= 2;                   // real yield worth locking
+    let bills = 60, dur = 25, gold = 15;
+    if (lockWorthIt) { bills -= 10; dur += 10; }
+    if (goldStrong)      { gold += 5;  bills -= 5; }
+    else if (goldWeak)   { gold -= 10; bills += 10; }
+    sleeve = {
+      allocations: [
+        { sym: 'SGOV', name: 'T-bills / short Treasuries', pct: bills },
+        { sym: 'IEF',  name: 'Intermediate Treasuries',    pct: dur },
+        { sym: 'GLD',  name: 'Gold',                       pct: gold },
+      ],
+      note: `Proceeds: ${bills}% T-bills (SGOV), ${dur}% intermediate Treasuries (IEF)`
+        + (lockWorthIt ? ` — ${realYield.toFixed(1)}% real yield worth locking` : '')
+        + `, ${gold}% gold (GLD)`
+        + (goldStrong ? ' — safe-haven bid confirmed' : goldWeak ? ' — trimmed, gold below trend' : '') + '.',
+    };
+  }
+
   return {
     verb, headline, quadrant,
     mode: defensive ? 'reentry' : 'exit',   // how the levels block should be titled
     pending: matrix.pending ?? null,
-    where, size, trigger, invalidations,
+    where, size, trigger, invalidations, sleeve,
   };
 }
 
@@ -2817,10 +2912,25 @@ export async function onRequest(context) {
 
   // R6/R8: RRG playbook — attach to the sectors card so the deep dive can render
   // it and the directive's WHERE reads from it.
+  // R9: CAPE-decile forward-return bands for the Macro Anchor.
   const sectorsCard = cards.find(c => c.id === 'sectors');
-  const rrg = await loadSectorRRG(db, kv);
+  const [rrg, anchorFwd] = await Promise.all([loadSectorRRG(db, kv), loadAnchorForward(db, kv)]);
   const playbook = buildSectorPlaybook(rrg, q);
   if (sectorsCard && playbook) sectorsCard.playbook = playbook;
+
+  if (anchorFwd) {
+    horizons.anchor.forward = { ...anchorFwd, bondReal: realYield ?? null };
+    const f = anchorFwd.h10;
+    if (f) {
+      horizons.anchor.forwardNote =
+        `From this CAPE decile (${anchorFwd.decile}/10, CAPE ${anchorFwd.cape}), 10-yr ${anchorFwd.basis} total returns have historically run ${f.p25}% to ${f.p75}%/yr (median ${f.median}%, n=${f.n} starts)`
+        + (realYield != null
+          ? (anchorFwd.basis === 'real'
+            ? ` — a 10-yr TIPS locks in ${realYield.toFixed(2)}% real today.`
+            : ` — 10-yr TIPS real yield today: ${realYield.toFixed(2)}%.`)
+          : '.');
+    }
+  }
 
   // W2 fix: when the Compass reads healthy, name the actual RRG-confirmed
   // leaders instead of a hard-coded sector list. Never clobber a stretch-governor
@@ -2834,7 +2944,7 @@ export async function onRequest(context) {
 
   // R1: the reconciled Action Directive — composed after horizons + cards so it
   // can reference the effective quadrant, Entry Window and live sector leaders.
-  horizons.directive = buildDirective(q, horizons, sectorsCard, breadthData, oasSeries);
+  horizons.directive = buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield);
 
   const body = JSON.stringify({
     timestamp: new Date().toISOString(),

@@ -895,6 +895,7 @@ function AnchorDial({ anchor }) {
         <div style={{ position: 'absolute', top: -3, bottom: -3, left: `calc(${Math.max(0, Math.min(100, anchor.score * 10))}% - 1px)`, width: 2, background: c, boxShadow: `0 0 6px ${c}` }} />
       </div>
       <span style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.35, minHeight: 30 }}>{anchor.note}</span>
+      {anchor.forwardNote && <span style={{ fontFamily: DSANS, fontSize: 10.5, color: '#8b9cc0', lineHeight: 1.4, borderTop: '1px solid #16202e', paddingTop: 7 }}>◆ {anchor.forwardNote}</span>}
     </div>
   );
 }
@@ -968,6 +969,26 @@ function ActionDirective({ directive, onOpen }) {
     </div>
   );
   const inv = directive.invalidations || [];
+
+  // R11: client-side sizing calculator — portfolio value + normal position size
+  // live in localStorage only (never sent anywhere); SIZE renders in dollars.
+  const loadPf = () => { try { return JSON.parse(localStorage.getItem('mh-portfolio')) || null; } catch { return null; } };
+  const [pf, setPf] = useStateD(loadPf);
+  const [pfEdit, setPfEdit] = useStateD(false);
+  const [pfVal, setPfVal] = useStateD(() => pf?.value ?? '');
+  const [pfPct, setPfPct] = useStateD(() => pf?.unitPct ?? '');
+  const savePf = (e) => {
+    e.stopPropagation();
+    const value = parseFloat(pfVal), unitPct = parseFloat(pfPct);
+    if (value > 0 && unitPct > 0) {
+      const next = { value, unitPct };
+      try { localStorage.setItem('mh-portfolio', JSON.stringify(next)); } catch { /* private mode */ }
+      setPf(next); setPfEdit(false);
+    }
+  };
+  const factor = directive.size?.factor ?? 1;
+  const tranche = pf ? pf.value * (pf.unitPct / 100) * factor / 3 : null;
+  const fmtUsd = (n) => '$' + Math.round(n).toLocaleString('en-US');
   return (
     <div style={{ borderRadius: 12, background: `${c}0d`, border: `1px solid ${c}40`, padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
@@ -980,8 +1001,26 @@ function ActionDirective({ directive, onOpen }) {
         <span style={{ color: '#cbd5e1' }}> — {directive.headline}</span>
       </Row>
       <Row label="WHERE">{directive.where && directive.where.note}</Row>
-      <Row label="SIZE">{directive.size && directive.size.note}</Row>
+      <Row label="SIZE">
+        {directive.size && directive.size.note}
+        {tranche != null && <span style={{ fontFamily: DMONO, fontSize: 11.5, fontWeight: 700, color: '#e8edf5' }}>{' '}≈ {fmtUsd(tranche)} per tranche.</span>}
+        {' '}
+        <span onClick={(e) => { e.stopPropagation(); setPfEdit(!pfEdit); }} style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+          {pf ? 'edit portfolio' : 'set portfolio for $ amounts'}
+        </span>
+        {pfEdit && (
+          <span onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+            <input value={pfVal} onChange={(e) => setPfVal(e.target.value)} placeholder="Portfolio $" inputMode="decimal"
+              style={{ width: 110, background: '#0a1119', border: '1px solid #1e2d3d', borderRadius: 6, color: '#e8edf5', fontFamily: DMONO, fontSize: 11.5, padding: '4px 8px' }} />
+            <input value={pfPct} onChange={(e) => setPfPct(e.target.value)} placeholder="Normal position %" inputMode="decimal"
+              style={{ width: 130, background: '#0a1119', border: '1px solid #1e2d3d', borderRadius: 6, color: '#e8edf5', fontFamily: DMONO, fontSize: 11.5, padding: '4px 8px' }} />
+            <span onClick={savePf} style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, color: '#22c55e', cursor: 'pointer', border: '1px solid #22c55e55', borderRadius: 6, padding: '3px 10px' }}>Save</span>
+            <span style={{ fontFamily: DSANS, fontSize: 10, color: '#64748b' }}>stored locally, never sent anywhere</span>
+          </span>
+        )}
+      </Row>
       <Row label="TRIGGER">{directive.trigger}</Row>
+      {directive.sleeve && <Row label="PROCEEDS">{directive.sleeve.note}</Row>}
       {inv.length > 0 && (
         <Row label={directive.mode === 'reentry' ? 'RE-ENTRY' : 'INVALIDATE'}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

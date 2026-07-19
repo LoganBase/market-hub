@@ -71,9 +71,16 @@ def init_schema():
             price    REAL,
             earnings REAL,
             dividend REAL,
-            cape     REAL
+            cape     REAL,
+            cpi      REAL
         )
     ''')
+    # Migration for tables created before the cpi column existed (activates
+    # real forward-return bands in /api/scores once re-seeded).
+    try:
+        d1_exec('ALTER TABLE shiller_data ADD COLUMN cpi REAL')
+    except Exception:
+        pass  # column already exists
     d1_exec('CREATE INDEX IF NOT EXISTS idx_shiller_date ON shiller_data (date DESC)')
     print('Schema ready.\n')
 
@@ -130,18 +137,19 @@ def fetch_shiller(local_path=None):
         price    = safe_float(row.iloc[1])   # P  — S&P 500 composite price
         dividend = safe_float(row.iloc[2])   # D  — trailing 12m dividends
         earnings = safe_float(row.iloc[3])   # E  — trailing 12m earnings
+        cpi      = safe_float(row.iloc[4])   # CPI — for real-return deflation
         cape     = safe_float(row.iloc[cape_col_idx])
 
         if price is None:
             continue
 
-        rows.append((date_iso, price, earnings, dividend, cape))
+        rows.append((date_iso, price, earnings, dividend, cape, cpi))
 
     return rows
 
 # ── UPLOAD ────────────────────────────────────────────────────────────────────
 def upload(rows):
-    cols       = ['date', 'price', 'earnings', 'dividend', 'cape']
+    cols       = ['date', 'price', 'earnings', 'dividend', 'cape', 'cpi']
     batch_size = max(1, D1_MAX_VARS // len(cols))   # ~19 rows per API call
     total      = len(rows)
     inserted   = 0
