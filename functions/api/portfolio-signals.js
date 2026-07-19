@@ -154,9 +154,12 @@ export async function onRequest(context) {
   if (!db) return new Response(JSON.stringify({ error: 'D1 not configured' }), { status: 500, headers: CORS });
 
   try {
-    const { results: holdings = [] } = await db.prepare(
-      `SELECT symbol, asset_class FROM portfolio_positions`
-    ).all();
+    let holdings = [];
+    try {
+      ({ results: holdings = [] } = await db.prepare(
+        `SELECT symbol, asset_class FROM portfolio_positions`
+      ).all());
+    } catch { /* table doesn't exist until the first sync — skip, don't error */ }
     if (!holdings.length) return new Response(JSON.stringify({ skipped: true, reason: 'no positions synced' }), { headers: CORS });
     const syms = holdings.map(h => h.symbol);
 
