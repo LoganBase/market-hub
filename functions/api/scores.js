@@ -2532,7 +2532,7 @@ async function loadAnchorForward(db, kv) {
   const todayUTC = new Date().toISOString().slice(0, 10);
   try {
     if (kv) {
-      const cached = await kv.get('anchor-forward:v1', 'json');
+      const cached = await kv.get('anchor-forward:v2', 'json');   // v2: cpi seeded 2026-07-19 — real basis
       if (cached && cached.computed === todayUTC) return cached.forward;
     }
   } catch { /* cache miss is fine */ }
@@ -2591,7 +2591,7 @@ async function loadAnchorForward(db, kv) {
       return { p25: q(0.25), median: q(0.5), p75: q(0.75), n: arr.length };
     };
     const forward = { cape: +curCape.toFixed(1), decile: dec, basis: hasCpi ? 'real' : 'nominal', h10: bandFor(120), h5: bandFor(60) };
-    try { if (kv) await kv.put('anchor-forward:v1', JSON.stringify({ computed: todayUTC, forward }), { expirationTtl: 172800 }); } catch { /* non-fatal */ }
+    try { if (kv) await kv.put('anchor-forward:v2', JSON.stringify({ computed: todayUTC, forward }), { expirationTtl: 172800 }); } catch { /* non-fatal */ }
     return forward;
   } catch { return null; }
 }
