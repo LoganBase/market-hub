@@ -2010,6 +2010,14 @@ const EW_THRESHOLD = 3.5;
 // preceded positive forward SPY returns ~69% of the time, ~3× the baseline rate.
 // Re-validate as live history accrues.
 const ENTRY_WINDOW_STATS = '~69% positive follow-through, ~3× baseline (validated Jul 2026)';
+// Capitulation Zone (study 2026-07-19, reconstructed scores 2007–2026 validated
+// at 98.6% state agreement vs stored history): deep Speedometer oversold INSIDE
+// an effective risk-off regime preceded a median +13% SPY move over 120 sessions
+// (70% positive, 30 episodes). The tail is real: 2008-style −30% continuations,
+// and no real-time credit filter reliably excludes them. Convex accumulation
+// evidence for the long-horizon allocator — never a directive verb change.
+const CAP_THRESHOLD = 2.5;
+const CAPITULATION_STATS = '+13% median 120-session forward SPY, 70% positive — 30 episodes since 2007';
 
 function stepHystState(prev, score) {
   if (prev == null) return score >= 5 ? 'high' : 'low';   // no history: seed at midpoint
@@ -2029,7 +2037,7 @@ function quadrantOf(speedHigh, compassHigh) {
 function replayMatrixState(series) {
   let sState = null, cState = null;
   let effective = null, pendingQ = null, pendingCount = 0;
-  let ewDays = 0;
+  let ewDays = 0, capDays = 0;
   for (const r of series) {
     if (r.speedometer == null || r.compass == null) continue;
     sState = stepHystState(sState, r.speedometer);
@@ -2046,8 +2054,9 @@ function replayMatrixState(series) {
       if (pendingCount >= HYST.persist) { effective = candidate; pendingQ = null; pendingCount = 0; }
     }
     ewDays = (r.speedometer < EW_THRESHOLD && cState === 'high') ? ewDays + 1 : 0;
+    capDays = (r.speedometer < CAP_THRESHOLD && effective === 'risk-off') ? capDays + 1 : 0;
   }
-  return { sState, cState, effective, pendingQ, pendingCount, ewDays };
+  return { sState, cState, effective, pendingQ, pendingCount, ewDays, capDays };
 }
 
 // ── HORIZON SCORES (timeframe-isolated) ───────────────────────────────────────
@@ -2234,6 +2243,20 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
       : `Opens when the Speedometer drops below ${EW_THRESHOLD} while the Compass trend state holds — the validated pullback-entry signal.`,
   };
 
+  // ── CAPITULATION ZONE — convex accumulation evidence inside risk-off ───────
+  // Not a buy signal and never changes the REDUCE verb: deep oversold within a
+  // broken trend has a large right tail AND an unfilterable 2008-style left tail.
+  const capOpen = quadrant === 'risk-off' && speedScore < CAP_THRESHOLD;
+  const capitulation = {
+    open: capOpen,
+    daysOpen: st.capDays,
+    threshold: CAP_THRESHOLD,
+    stats: CAPITULATION_STATS,
+    note: capOpen
+      ? `Capitulation Zone (day ${st.capDays}): deep oversold within a broken trend — historically ${CAPITULATION_STATS}. Caveat: includes 2008-style −30% continuations no filter reliably excludes. Reserve deployment in tranches only, within the Anchor budget.`
+      : `Opens when the Speedometer drops below ${CAP_THRESHOLD} while the regime is risk-off — convex long-horizon accumulation evidence, with a real crisis tail.`,
+  };
+
   // Speedometer trigger — mean-reversion-aware (computed after the Compass state
   // so oversold readings can be framed as Entry Windows, not just as weakness).
   const speedTrigger = entryOpen
@@ -2265,6 +2288,7 @@ function buildHorizons(q, breadthData, valn, fred, histRows = []) {
       hysteresis: { enter: HYST.enter, exit: HYST.exit, persistDays: HYST.persist, basis: histRows.length ? 'history' : 'today-only' },
     },
     entryWindow,
+    capitulation,
   };
 }
 
@@ -2663,7 +2687,7 @@ async function loadReceipts(db, kv) {
 // data already computed — every other surface defers to this. Live handler only
 // (the as-of backfill stores horizon scores, not directives).
 function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYield = null, receipts = null) {
-  const { matrix, entryWindow, anchor, speedometer, compass } = horizons;
+  const { matrix, entryWindow, anchor, speedometer, compass, capitulation } = horizons;
   const spy = q['SPY'];
   const quadrant = matrix.quadrant;
   const stretched = spy?.vs200 != null && spy.vs200 > 10;
@@ -2822,6 +2846,9 @@ function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries, realYi
     mode: defensive ? 'reentry' : 'exit',   // how the levels block should be titled
     pending: matrix.pending ?? null,
     where, size, trigger, invalidations, sleeve, receipt,
+    // Evidence row only — the verb above stays REDUCE; this is the study-backed
+    // context for a long-horizon allocator deciding how to use the reserve.
+    capitulation: capitulation?.open ? capitulation.note : null,
   };
 }
 

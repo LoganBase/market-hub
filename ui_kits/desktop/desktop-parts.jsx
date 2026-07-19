@@ -850,7 +850,7 @@ function HorizonTitle({ title }) {
   );
 }
 
-function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, entryWindow, governor }) {
+function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, entryWindow, governor, capitulation }) {
   const c = horizonColorH(score);
   const w = Math.max(0, Math.min(100, score * 10));
   return (
@@ -872,6 +872,7 @@ function HorizonDial({ title, horizon, score, level, trigger, veto, vixRatio, en
       {veto && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#ef4444' }}>⚠ VIX BACKWARDATION{vixRatio != null ? ` (${vixRatio})` : ''} — TACTICAL CAPPED</span>}
       {entryWindow && entryWindow.open && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#60a5fa' }}>◈ ENTRY WINDOW OPEN — DAY {entryWindow.daysOpen}</span>}
       {governor && governor.applied && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#f59e0b' }}>⚠ STRETCH GOVERNOR — CAPPED AT {governor.cap.toFixed(1)} (SPY +{governor.vs200}% vs 200d)</span>}
+      {capitulation && capitulation.open && <span style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.03em', color: '#a855f7' }}>◆ CAPITULATION ZONE — DAY {capitulation.daysOpen}</span>}
     </div>
   );
 }
@@ -1022,6 +1023,7 @@ function ActionDirective({ directive, onOpen }) {
       <Row label="TRIGGER">{directive.trigger}</Row>
       {directive.sleeve && <Row label="PROCEEDS">{directive.sleeve.note}</Row>}
       {directive.receipt && <Row label="RECEIPT">{directive.receipt}</Row>}
+      {directive.capitulation && <Row label="CAPITULATION"><span style={{ color: '#c4b5fd' }}>{directive.capitulation}</span></Row>}
       {inv.length > 0 && (
         <Row label={directive.mode === 'reentry' ? 'RE-ENTRY' : 'INVALIDATE'}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1069,7 +1071,7 @@ function HorizonHero({ horizons, exec, onOpen }) {
         <span style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b' }}>tactical · trend · structural</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
-        <HorizonDial title="Tactical Speedometer" horizon={speedometer.horizon || '2–3 weeks'} score={speedometer.score} level={speedometer.level} trigger={speedometer.trigger} veto={speedometer.veto} vixRatio={speedometer.vixRatio} entryWindow={horizons.entryWindow} />
+        <HorizonDial title="Tactical Speedometer" horizon={speedometer.horizon || '2–3 weeks'} score={speedometer.score} level={speedometer.level} trigger={speedometer.trigger} veto={speedometer.veto} vixRatio={speedometer.vixRatio} entryWindow={horizons.entryWindow} capitulation={horizons.capitulation} />
         <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} governor={compass.governor} />
         <AnchorDial anchor={anchor} />
       </div>
@@ -1089,6 +1091,13 @@ function HorizonHero({ horizons, exec, onOpen }) {
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#60a5fa', boxShadow: '0 0 6px #60a5fa', flexShrink: 0 }} />
           <span style={{ fontFamily: DSANS, fontSize: 11.5, fontWeight: 700, color: '#60a5fa', letterSpacing: '.04em', flexShrink: 0 }}>ENTRY WINDOW</span>
           <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.4 }}>{horizons.entryWindow.note}</span>
+        </div>
+      )}
+      {horizons.capitulation && horizons.capitulation.open && (
+        <div style={{ borderTop: '1px solid #1e1030', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#a855f7', boxShadow: '0 0 6px #a855f7', flexShrink: 0 }} />
+          <span style={{ fontFamily: DSANS, fontSize: 11.5, fontWeight: 700, color: '#a855f7', letterSpacing: '.04em', flexShrink: 0 }}>CAPITULATION ZONE</span>
+          <span style={{ fontFamily: DSANS, fontSize: 11.5, color: '#94a3b8', lineHeight: 1.4 }}>{horizons.capitulation.note}</span>
         </div>
       )}
       {exec && exec.sourceNote && (

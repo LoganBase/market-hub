@@ -28,6 +28,8 @@ export function buildFingerprint(scores) {
     pendingLabel:  h.matrix?.pending?.label ?? null,
     entryWindow:   !!h.entryWindow?.open,
     ewDays:        h.entryWindow?.daysOpen ?? 0,
+    capitulation:  !!h.capitulation?.open,
+    capDays:       h.capitulation?.daysOpen ?? 0,
     veto:          !!h.speedometer?.veto,
     anchorZone:    h.anchor?.zone ?? null,
     overweights:   pb.filter(p => p.call === 'overweight').map(p => p.sym).sort(),
@@ -51,6 +53,12 @@ export function diffStates(prev, next) {
   }
   if (prev.entryWindow && !next.entryWindow) {
     changes.push({ kind: 'entry-window', sev: 'info', text: 'Entry Window closed' });
+  }
+  if (!prev.capitulation && next.capitulation) {
+    changes.push({ kind: 'capitulation', sev: 'high', text: `CAPITULATION ZONE OPEN — deep oversold within risk-off (day ${next.capDays}); historically +13% median 120-session forward SPY, but with 2008-style tails — tranches only, Anchor-sized` });
+  }
+  if (prev.capitulation && !next.capitulation) {
+    changes.push({ kind: 'capitulation', sev: 'info', text: 'Capitulation Zone closed' });
   }
   if (!prev.veto && next.veto) {
     changes.push({ kind: 'veto', sev: 'high', text: 'VIX term-structure veto ENGAGED — volatility backwardation; all adds vetoed' });
