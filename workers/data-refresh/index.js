@@ -94,6 +94,64 @@ async function sendAlert(env, health) {
   }
 }
 
+// R13: send a state-change alert via Resend. Fired only when /api/state-alert
+// reports an actual change (quadrant, Entry Window, veto, Anchor zone, sector
+// calls) — the hysteresis layer upstream keeps these rare, so this is a dozen
+// or so emails a year, not a daily digest.
+async function sendStateAlert(env, payload) {
+  const apiKey = env.RESEND_API_KEY;
+  const to     = env.ALERT_EMAIL;
+  if (!apiKey || !to) {
+    console.warn('[data-refresh] RESEND_API_KEY/ALERT_EMAIL not set — skipping state alert');
+    return;
+  }
+
+  const high = payload.changes.filter(c => c.sev === 'high');
+  const subject = high.length
+    ? `📊 Market Hub — ${high[0].text.split('—')[0].trim()}`
+    : `📊 Market Hub — ${payload.changes.length} state change${payload.changes.length === 1 ? '' : 's'}`;
+
+  const changeRows = payload.changes.map(c =>
+    `<tr><td style="padding:5px 0;color:${c.sev === 'high' ? '#f59e0b' : '#94a3b8'};font-size:14px">${c.sev === 'high' ? '▲ ' : '· '}${c.text}</td></tr>`
+  ).join('');
+
+  const d = payload.directive;
+  const dRow = (label, val) => val ? `<tr><td style="padding:4px 14px 4px 0;color:#64748b;font-size:11px;font-family:monospace;vertical-align:top;white-space:nowrap">${label}</td><td style="padding:4px 0;color:#cbd5e1;font-size:13px">${val}</td></tr>` : '';
+  const dirBlock = d ? `
+  <h3 style="margin:24px 0 8px;font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em">Current Directive</h3>
+  <table style="width:100%;border-collapse:collapse">
+    ${dRow('ACTION', `<b style="color:#e8edf5">${d.verb}</b> — ${d.headline}`)}
+    ${dRow('WHERE', d.where)}
+    ${dRow('SIZE', d.size)}
+    ${dRow('TRIGGER', d.trigger)}
+    ${dRow('PROCEEDS', d.proceeds)}
+    ${dRow('RECEIPT', d.receipt)}
+  </table>` : '';
+
+  const html = `
+<div style="background:#080c14;color:#e8edf5;font-family:system-ui,sans-serif;padding:32px;border-radius:12px;max-width:560px">
+  <h2 style="margin:0 0 4px;color:#60a5fa">Market Hub — State Change</h2>
+  <p style="margin:0 0 20px;color:#64748b;font-size:13px">Detected after tonight's refresh · Speedometer ${payload.state?.scores?.speedometer ?? '?'} · Compass ${payload.state?.scores?.compass ?? '?'} · Anchor ${payload.state?.scores?.anchor ?? '?'}</p>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:8px">${changeRows}</table>
+  ${dirBlock}
+  <p style="margin:24px 0 0;font-size:11px;color:#334155">
+    Market Hub · <a href="https://market.loganbase.com" style="color:#3b82f6">Open the dashboard</a>
+  </p>
+</div>`;
+
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ from: 'Market Hub <onboarding@resend.dev>', to, subject, html }),
+    });
+    if (r.ok) console.log('[data-refresh] state alert sent to', to);
+    else console.error('[data-refresh] Resend error (state alert):', r.status, (await r.text()).slice(0, 200));
+  } catch (err) {
+    console.error('[data-refresh] failed to send state alert:', err.message);
+  }
+}
+
 // Call an authenticated hub endpoint and return parsed JSON, or an error object.
 async function callHub(url, hubToken) {
   let res;
@@ -156,6 +214,20 @@ async function runRefresh(env) {
   console.log(`[data-refresh] running brief-theme`);
   const theme = await callHub(`${siteUrl}/api/brief-theme`, hubToken);
   console.log(`[data-refresh] brief-theme — ${theme.error ? 'error: ' + theme.error : theme.skipped ? 'skipped: ' + theme.skipped : 'theme: ' + (theme.theme || '?')}`);
+
+  // R13: state-change alert — fingerprint the post-refresh decision state
+  // (quadrant, Entry Window, veto, Anchor zone, sector calls) and email only
+  // when something actually changed. First run just stores the baseline.
+  console.log(`[data-refresh] running state-alert`);
+  const alertRes = await callHub(`${siteUrl}/api/state-alert`, hubToken);
+  if (alertRes.error) {
+    console.error('[data-refresh] state-alert error:', alertRes.error);
+  } else if (alertRes.changed) {
+    console.log('[data-refresh] state changed:', alertRes.changes.map(c => c.text).join(' | '));
+    await sendStateAlert(env, alertRes);
+  } else {
+    console.log(`[data-refresh] state unchanged${alertRes.first ? ' (first run — baseline stored)' : ''}`);
+  }
 
   // Health check — email an alert only on a real failure (status 'error':
   // D1 unreachable or mass staleness). 'warning' covers benign, expected gaps
