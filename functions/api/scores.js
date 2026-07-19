@@ -2522,7 +2522,11 @@ async function loadAnchorForward(db, kv) {
         `SELECT date, price, dividend, cape FROM shiller_data WHERE price > 0 ORDER BY date ASC`).all());
     }
     if (!rows || rows.length < 400) return null;
-    const hasCpi = rows[0].cpi != null && rows[rows.length - 1].cpi != null;
+    // Real mode needs broad CPI coverage, not perfect coverage — Shiller's file
+    // often ships CPI lagging a month or two at the tail, and the TV webhook's
+    // cape-only rows never carry it. 90%+ coverage → real; below → nominal.
+    const cpiCount = rows.reduce((n, r) => n + (r.cpi != null ? 1 : 0), 0);
+    const hasCpi = cpiCount >= rows.length * 0.9;
 
     // Total-return index, dividends (trailing-12m rate) reinvested monthly.
     const tr = new Array(rows.length);
@@ -2531,7 +2535,9 @@ async function loadAnchorForward(db, kv) {
       const p0 = rows[i - 1].price, p1 = rows[i].price, d = rows[i].dividend;
       tr[i] = (p1 && p0) ? tr[i - 1] * ((p1 + (d ?? 0) / 12) / p0) : tr[i - 1];
     }
-    const level = (i) => hasCpi && rows[i].cpi ? tr[i] / rows[i].cpi : tr[i];
+    // In real mode a row without CPI has no real level — return null so any
+    // window touching it is skipped, never silently mixed with nominal.
+    const level = (i) => hasCpi ? (rows[i].cpi ? tr[i] / rows[i].cpi : null) : tr[i];
 
     // CAPE decile thresholds over the full history.
     const capes = rows.map(r => r.cape).filter(c => c != null).sort((a, b) => a - b);
