@@ -953,6 +953,50 @@ function InteractionMatrix({ matrix }) {
   );
 }
 
+// ── Action Directive (R1) — the single reconciled instruction ─────────────────
+// ACTION / WHERE / SIZE / TRIGGER / INVALIDATE (or RE-ENTRY), composed by the
+// API from the effective quadrant, Entry Window, Anchor sizing, live sector
+// leaders and hard invalidation levels. Every other surface defers to this.
+function ActionDirective({ directive, onOpen }) {
+  const VC = { ADD: '#22c55e', WAIT: '#60a5fa', HOLD: '#f59e0b', TRIM: '#f59e0b', REDUCE: '#ef4444' };
+  const c = VC[directive.verb] || '#94a3b8';
+  const Row = ({ label, children }) => (
+    <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: 10, alignItems: 'baseline' }}>
+      <span style={{ fontFamily: DMONO, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', color: '#64748b' }}>{label}</span>
+      <span style={{ fontFamily: DSANS, fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>{children}</span>
+    </div>
+  );
+  const inv = directive.invalidations || [];
+  return (
+    <div style={{ borderRadius: 12, background: `${c}0d`, border: `1px solid ${c}40`, padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+        <span style={{ fontFamily: DSANS, fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#94a3b8' }}>Action Directive</span>
+        {directive.pending && <span style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8' }}>· shifting → {directive.pending.label} ({directive.pending.daysConfirmed}/{directive.pending.daysRequired} days)</span>}
+        {onOpen && <span style={{ marginLeft: 'auto', fontFamily: DSANS, fontSize: 11.5, fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap' }}>Matrix &amp; history →</span>}
+      </div>
+      <Row label="ACTION">
+        <span style={{ fontFamily: DSANS, fontSize: 12.5, fontWeight: 800, color: c, letterSpacing: '.04em' }}>{directive.verb}</span>
+        <span style={{ color: '#cbd5e1' }}> — {directive.headline}</span>
+      </Row>
+      <Row label="WHERE">{directive.where && directive.where.note}</Row>
+      <Row label="SIZE">{directive.size && directive.size.note}</Row>
+      <Row label="TRIGGER">{directive.trigger}</Row>
+      {inv.length > 0 && (
+        <Row label={directive.mode === 'reentry' ? 'RE-ENTRY' : 'INVALIDATE'}>
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {inv.map(iv => (
+              <span key={iv.key} style={{ color: iv.breached ? '#ef4444' : '#94a3b8' }}>
+                <span style={{ fontFamily: DMONO, fontSize: 11, fontWeight: 700, color: iv.breached ? '#ef4444' : '#cbd5e1' }}>{iv.label} {iv.current}</span>
+                {' — '}{iv.note}
+              </span>
+            ))}
+          </span>
+        </Row>
+      )}
+    </div>
+  );
+}
+
 // Exec Summary banner — renders only when a top-3 InterMarket ratio has a
 // confirmed, fresh turn (self-fetches; diagnostic, never touches the score).
 function InterMarketCallout() {
@@ -988,7 +1032,9 @@ function HorizonHero({ horizons, exec, onOpen }) {
         <HorizonDial title="Trend Compass" horizon={compass.horizon || '2–3 months'} score={compass.score} level={compass.level} trigger={compass.trigger} />
         <AnchorDial anchor={anchor} />
       </div>
-      {matrix && (
+      {horizons.directive ? (
+        <ActionDirective directive={horizons.directive} onOpen={onOpen} />
+      ) : matrix && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderRadius: 12, background: `${qc}14`, border: `1px solid ${qc}38` }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: qc, boxShadow: `0 0 7px ${qc}`, flexShrink: 0 }} />
           <span style={{ fontFamily: DSANS, fontSize: 14, fontWeight: 700, color: qc }}>{matrix.label}</span>

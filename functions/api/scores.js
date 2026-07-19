@@ -1385,7 +1385,16 @@ function buildSectors(q, sectorWeights) {
     ['Cyclicals',  `${cycBull} / ${cycRows.length}`,  'above 200d SMA',  cycBull >= 5 ? 'pos' : cycBull < 3 ? 'neg' : null],
     ['Defensives', `${defBull} / ${defRows.length}`, 'above 200d SMA',  defBull >= 3 ? 'neg' : defBull <= 1 ? 'pos' : null],
   ];
-  return { id: 'sectors', number: 9, title: 'Sectors', subtitle: 'The Rotation', status: sectStatus, rows, stats, allRows, hideIndicator: true, note: sectNote };
+  // Overweight/underweight candidates for the Action Directive: only cyclicals
+  // qualify either way (defensive leadership is a risk signal, not a buy call).
+  // R6 will upgrade this to RRG-quadrant persistence.
+  const overweights = allSectors.filter(r => r.type === 'cyclical' && r.abv200 && r.relPerf > 0)
+    .sort((a, b) => b.relPerf - a.relPerf)
+    .map(r => ({ sym: r.sym, name: r.name, relPerf: +r.relPerf.toFixed(1) }));
+  const underweights = allSectors.filter(r => r.type === 'cyclical' && !r.abv200)
+    .sort((a, b) => a.relPerf - b.relPerf)
+    .map(r => ({ sym: r.sym, name: r.name, relPerf: +r.relPerf.toFixed(1) }));
+  return { id: 'sectors', number: 9, title: 'Sectors', subtitle: 'The Rotation', status: sectStatus, rows, stats, allRows, hideIndicator: true, note: sectNote, overweights, underweights };
 }
 
 function buildCommodities(q, commCtx) {
@@ -2296,6 +2305,117 @@ function buildAggregate(cards) {
     score: `${(weightedPct * 10).toFixed(1)}/10`, label, posture, glow, categories, regimeBearish, divergence };
 }
 
+// ── ACTION DIRECTIVE (R1) — the single reconciled instruction ─────────────────
+// Composes the quadrant, Entry Window, Anchor sizing, sector leaders and hard
+// invalidation levels (R5) into one answer-first output. Pure composition of
+// data already computed — every other surface defers to this. Live handler only
+// (the as-of backfill stores horizon scores, not directives).
+function buildDirective(q, horizons, sectorsCard, breadthData, oasSeries) {
+  const { matrix, entryWindow, anchor, speedometer, compass } = horizons;
+  const spy = q['SPY'];
+  const quadrant = matrix.quadrant;
+  const stretched = spy?.vs200 != null && spy.vs200 > 10;
+  const defensive = quadrant === 'risk-off' || quadrant === 'bear-rally';
+
+  // ── ACTION ──────────────────────────────────────────────────────────────────
+  let verb, headline;
+  if (quadrant === 'add-risk') {
+    if (stretched) {
+      verb = 'HOLD';
+      headline = `Trend aligned but SPY is extended (${pct(spy.vs200, 1)} vs 200d) — wait for the next Entry Window rather than chasing.`;
+    } else if (entryWindow.open) {
+      verb = 'ADD';
+      headline = `Entry Window open (day ${entryWindow.daysOpen}) with both trends up — deploy a tranche now.`;
+    } else {
+      verb = 'ADD';
+      headline = 'Both trends up — adds are permitted; pullback entries (Entry Windows) carry the better odds.';
+    }
+  } else if (quadrant === 'accumulate') {
+    verb = entryWindow.open ? 'ADD' : 'WAIT';
+    headline = entryWindow.open
+      ? `Entry Window open (day ${entryWindow.daysOpen}) — the validated add point: trend intact, tactical oversold.`
+      : `Trend intact but tactical is soft — hold fire until the Entry Window opens (Speedometer < ${entryWindow.threshold}).`;
+  } else if (quadrant === 'bear-rally') {
+    verb = 'TRIM';
+    headline = 'Short-term bounce inside a broken trend — no new positions; use strength to reduce, not to chase.';
+  } else {
+    verb = 'REDUCE';
+    headline = 'Both timeframes point down — cut exposure toward defensives and cash.';
+  }
+
+  // ── WHERE — cyclical leaders in trend, from the live sector data ────────────
+  const over  = sectorsCard?.overweights  ?? [];
+  const under = sectorsCard?.underweights ?? [];
+  const where = defensive
+    ? { overweights: [], underweights: under,
+        note: 'Sector overweights suspended — favour defensives, quality and cash until the trend repairs.' }
+    : { overweights: over, underweights: under,
+        note: over.length
+          ? `Adds go to cyclical leaders in trend: ${over.map(s => `${s.name} (${s.sym} ${s.relPerf >= 0 ? '+' : ''}${s.relPerf}% vs SPY)`).join(', ')}.`
+          : 'No cyclical sector currently qualifies (in trend + outperforming) — add via the broad index or wait.' };
+
+  // ── SIZE — the Anchor is the budget, tranches are the schedule ──────────────
+  const sizePct = Math.round((matrix.sizingFactor ?? 1) * 100);
+  const size = {
+    factor: matrix.sizingFactor ?? 1, pctOfNormal: sizePct, zone: anchor.zone,
+    note: `Deploy in thirds: each tranche ≈ 1/3 of a ${sizePct}%-of-normal position (Macro Anchor ${anchor.zone}${anchor.zone !== 'green' ? ' — valuations leave less cushion' : ''}).`,
+  };
+
+  // ── TRIGGER — what green-lights the next add ────────────────────────────────
+  const trigger = entryWindow.open
+    ? `Active now: Speedometer ${speedometer.score.toFixed(1)} is below ${entryWindow.threshold} with the Compass trend intact (${entryWindow.stats}).`
+    : `Next add on Entry Window: Speedometer < ${entryWindow.threshold} while the Compass state holds high (currently ${speedometer.score.toFixed(1)} / ${compass.score.toFixed(1)}).`;
+
+  // ── INVALIDATIONS (R5) — hard levels that kill (or, when defensive, re-arm)
+  // the risk-on stance. Every level is a number already computed elsewhere.
+  const invalidations = [];
+  if (spy?.price && spy?.sma200) {
+    invalidations.push({
+      key: 'spy200', label: 'SPY 200d SMA', level: usd(spy.sma200), current: usd(spy.price),
+      breached: spy.price < spy.sma200,
+      note: defensive
+        ? `Re-risk signal: SPY closing back above ${usd(spy.sma200)}.`
+        : `Stance dies on a SPY close below ${usd(spy.sma200)} (${pct(spy.vs200, 1)} above it now).`,
+    });
+  }
+  const vix = q['^VIX']?.price, vix3m = q['^VIX3M']?.price;
+  if (vix != null && vix3m != null && vix3m > 0) {
+    const ratio = vix / vix3m;
+    invalidations.push({
+      key: 'vixveto', label: 'VIX/VIX3M veto', level: '1.00', current: ratio.toFixed(2),
+      breached: ratio > 1,
+      note: ratio > 1 ? 'BREACHED — volatility term structure inverted; all adds vetoed.'
+        : `All adds veto if the ratio closes above 1.00 (now ${ratio.toFixed(2)}).`,
+    });
+  }
+  const mmth = breadthData?.pct_above_200d;
+  if (mmth != null) {
+    invalidations.push({
+      key: 'mmth', label: 'NYSE breadth floor', level: '40%', current: `${mmth.toFixed(1)}%`,
+      breached: mmth < 40,
+      note: mmth < 40 ? 'BREACHED — breadth breakdown; broad exposure carries elevated risk.'
+        : `Breadth breakdown if fewer than 40% of NYSE stocks hold their 200d (now ${mmth.toFixed(1)}%).`,
+    });
+  }
+  if (oasSeries && oasSeries.length >= 50) {
+    const oasCur = oasSeries[0].value;
+    const oasSma50 = oasSeries.slice(0, 50).reduce((a, b) => a + b.value, 0) / 50;
+    invalidations.push({
+      key: 'oas', label: 'HY OAS vs 50d avg', level: oasSma50.toFixed(2) + '%', current: oasCur.toFixed(2) + '%',
+      breached: oasCur > oasSma50,
+      note: oasCur > oasSma50 ? 'BREACHED — credit spreads widening above trend; credit is not confirming.'
+        : `Credit warning if HY spreads rise above their 50d average (${oasSma50.toFixed(2)}%).`,
+    });
+  }
+
+  return {
+    verb, headline, quadrant,
+    mode: defensive ? 'reentry' : 'exit',   // how the levels block should be titled
+    pending: matrix.pending ?? null,
+    where, size, trigger, invalidations,
+  };
+}
+
 // ── HANDLER ───────────────────────────────────────────────────────────────────
 // Assemble the valn/fred bundles from raw loader outputs and compute the horizons.
 // Shared by the live handler and the as-of backfill so they stay identical.
@@ -2485,6 +2605,9 @@ export async function onRequest(context) {
 
   // ── HORIZON SCORES ─────────────────────────────────────────────────────────
   const horizons = computeHorizons(q, breadthData, capeP, buffettP, fwdPeP, epsMom, oasSeries, realYieldSeries, fedFundsSeries, scoreHist);
+  // R1: the reconciled Action Directive — composed after horizons + cards so it
+  // can reference the effective quadrant, Entry Window and live sector leaders.
+  horizons.directive = buildDirective(q, horizons, cards.find(c => c.id === 'sectors'), breadthData, oasSeries);
 
   const body = JSON.stringify({
     timestamp: new Date().toISOString(),
