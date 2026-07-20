@@ -17,9 +17,12 @@ export async function onRequest(context) {
 
   try {
     if (symbol) {
+      // Newest 500, returned ascending (a bare ASC LIMIT truncates to the OLDEST rows)
       const { results = [] } = await db.prepare(
-        `SELECT date, tech_score, fund_score, sent_score, agg_score, recommendation, market_gate
-         FROM stock_signals WHERE symbol = ? ORDER BY date ASC LIMIT 500`
+        `SELECT * FROM (
+           SELECT date, tech_score, fund_score, sent_score, agg_score, recommendation, market_gate
+           FROM stock_signals WHERE symbol = ? ORDER BY date DESC LIMIT 500
+         ) ORDER BY date ASC`
       ).bind(symbol).all();
       return new Response(JSON.stringify({
         symbol,
@@ -33,7 +36,9 @@ export async function onRequest(context) {
       }), { headers: CORS });
     }
     const { results = [] } = await db.prepare(
-      `SELECT date, nav, cash FROM portfolio_snapshots WHERE symbol = '_ACCOUNT' AND nav IS NOT NULL ORDER BY date ASC LIMIT 1000`
+      `SELECT * FROM (
+         SELECT date, nav, cash FROM portfolio_snapshots WHERE symbol = '_ACCOUNT' AND nav IS NOT NULL ORDER BY date DESC LIMIT 1000
+       ) ORDER BY date ASC`
     ).all();
     return new Response(JSON.stringify({
       dates: results.map(r => r.date),
