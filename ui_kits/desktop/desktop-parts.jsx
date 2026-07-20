@@ -7225,8 +7225,126 @@ function StockReceiptsTable({ r, note }) {
   );
 }
 
-// Basic detail pane (position facts + signals + per-stock receipts).
+function useStockDetail(symbol) {
+  const [d, setD] = useStateD(null);
+  useEffectD(() => {
+    let alive = true;
+    setD(null);
+    if (!symbol) return () => { alive = false; };
+    fetch('/api/stock-detail?symbol=' + encodeURIComponent(symbol)).then(r => r.json())
+      .then(x => { if (alive && x && x.symbol === symbol) setD(x); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [symbol]);
+  return d;
+}
+
+function useRecHistory(symbol) {
+  const [d, setD] = useStateD(null);
+  useEffectD(() => {
+    let alive = true;
+    setD(null);
+    if (!symbol) return () => { alive = false; };
+    fetch('/api/portfolio-history?symbol=' + encodeURIComponent(symbol)).then(r => r.json())
+      .then(x => { if (alive && x && x.dates && x.dates.length) setD(x); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [symbol]);
+  return d;
+}
+
+// 6-month strip: agg score line (0–10) over a per-day band colored by the
+// recommendation the engine held. Compact, no axes — shape + state at a glance.
+function RecHistoryStrip({ h }) {
+  if (!h || !h.dates || h.dates.length < 10) return null;
+  const N = Math.min(130, h.dates.length);
+  const agg = h.agg.slice(-N), recs = h.recommendations.slice(-N);
+  const W = 300, LINE_H = 30, STRIP_Y = 34, STRIP_H = 6;
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    if (agg[i] == null) continue;
+    pts.push(`${(i / (N - 1) * W).toFixed(1)},${((1 - Math.max(0, Math.min(10, agg[i])) / 10) * LINE_H).toFixed(1)}`);
+  }
+  const bw = W / N;
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid #16202e', paddingTop: 10 }}>
+      <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>
+        Signal history <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· ~6 months · line = score, band = state held</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${STRIP_Y + STRIP_H}`} style={{ width: '100%', height: 52, display: 'block' }}>
+        <line x1="0" y1={LINE_H * 0.4} x2={W} y2={LINE_H * 0.4} stroke="#1e2d3d" strokeWidth="0.5" />
+        <polyline points={pts.join(' ')} fill="none" stroke="#94a3b8" strokeWidth="1.3" />
+        {recs.map((r, i) => (
+          <rect key={i} x={(i * bw).toFixed(1)} y={STRIP_Y} width={(bw + 0.15).toFixed(2)} height={STRIP_H}
+            fill={(REC_META[r] && REC_META[r].c) || '#334155'} opacity="0.85" />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function FundamentalsSnapshot({ f }) {
+  if (!f) return null;
+  const pct1 = (v) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const n1 = (v) => v == null ? '—' : v.toFixed(1);
+  const cells = [
+    ['P/E', n1(f.pe)], ['Fwd P/E', n1(f.forward_pe)], ['P/B', n1(f.pb)],
+    ['D/E', f.debt_to_equity != null ? f.debt_to_equity.toFixed(2) : '—'],
+    ['EPS YoY', pct1(f.eps_growth_yoy)], ['Rev YoY', pct1(f.revenue_growth_yoy)],
+    ['Net margin', pct1(f.net_margin)], ['FCF yield', pct1(f.fcf_yield)], ['ROE', pct1(f.roe)],
+  ];
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid #16202e', paddingTop: 10 }}>
+      <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 8 }}>
+        Fundamentals <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· as of {f.as_of}{f.next_earnings ? ` · next earnings ${f.next_earnings}` : ''}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 12px' }}>
+        {cells.map(([l, v]) => (
+          <div key={l}>
+            <div style={{ fontFamily: DSANS, fontSize: 9, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#475569' }}>{l}</div>
+            <div style={{ fontFamily: DMONO, fontSize: 12.5, color: v === '—' ? '#475569' : '#cbd5e1' }}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewsList({ detail }) {
+  if (!detail) return null;
+  const sent = detail.sentiment;
+  const news = detail.news || [];
+  if (!sent && !news.length) return null;
+  const sc = sent && sent.score != null ? (sent.score >= 1.5 ? '#22c55e' : sent.score <= -1.5 ? '#ef4444' : '#94a3b8') : '#64748b';
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid #16202e', paddingTop: 10 }}>
+      <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>
+        News & sentiment
+        {sent && sent.score != null && <span style={{ fontFamily: DMONO, color: sc, marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>{sent.score >= 0 ? '+' : ''}{sent.score} <span style={{ color: '#475569' }}>({Math.round((sent.confidence ?? 0) * 100)}% conf · {sent.nArticles} articles · {sent.date})</span></span>}
+        {sent && sent.score == null && <span style={{ fontFamily: DSANS, fontWeight: 400, color: '#475569', marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>no recent news scored</span>}
+      </div>
+      {sent && sent.drivers && sent.drivers.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {sent.drivers.map((d, i) => (
+            <span key={i} style={{ fontFamily: DSANS, fontSize: 10, color: '#94a3b8', background: '#141c28', border: '1px solid #1e2d3d', borderRadius: 10, padding: '2px 8px' }}>{d}</span>
+          ))}
+        </div>
+      )}
+      {news.slice(0, 6).map((a, i) => (
+        <div key={i} style={{ padding: '5px 0', borderTop: i > 0 ? '1px solid #10161f' : 'none' }}>
+          <a href={a.url || '#'} target="_blank" rel="noopener noreferrer" style={{ fontFamily: DSANS, fontSize: 11, color: '#cbd5e1', textDecoration: 'none', lineHeight: 1.35, display: 'block' }}>{a.headline}</a>
+          <span style={{ fontFamily: DSANS, fontSize: 9.5, color: '#475569' }}>{(a.published_at || '').slice(0, 10)}{a.source ? ' · ' + a.source : ''}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Detail pane: facts + signals + history strip + fundamentals + news + receipts.
 function PositionDetail({ p, receipts, receiptsNote }) {
+  const sym = p ? p.symbol : null;
+  const detail = useStockDetail(sym);
+  const hist = useRecHistory(sym);
   if (!p) return (
     <div style={{ fontFamily: DSANS, fontSize: 12.5, color: '#64748b', padding: 24, textAlign: 'center' }}>Select a position</div>
   );
@@ -7254,6 +7372,9 @@ function PositionDetail({ p, receipts, receiptsNote }) {
       {s && row('Sentiment', s.sent && s.sent.score != null ? s.sent.score.toFixed(1) + '/10' : (s.sent && s.sent.status) || '—')}
       {s && s.note && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45, marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 10 }}>{s.note}</div>}
       {!s && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b', marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 10 }}>Per-stock signals not yet computed for this holding.</div>}
+      <RecHistoryStrip h={hist} />
+      <FundamentalsSnapshot f={detail && detail.fundamentals} />
+      <NewsList detail={detail} />
       <StockReceiptsTable r={receipts} note={receiptsNote} />
     </div>
   );
