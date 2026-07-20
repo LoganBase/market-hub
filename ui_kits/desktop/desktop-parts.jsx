@@ -7170,9 +7170,63 @@ function PositionsTable({ positions, sel, onSel, compact }) {
   );
 }
 
-// Basic detail pane (Phase 1: position facts + whatever signals exist; the deep
-// breakdown — fundamentals snapshot, news list, rec history — lands in Phase 5).
-function PositionDetail({ p }) {
+function usePortfolioReceipts() {
+  const [data, setData] = useStateD(null);
+  useEffectD(() => {
+    let alive = true;
+    fetch('/api/portfolio-receipts').then(r => r.json())
+      .then(d => { if (alive && d && d.symbols) setData(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return data;
+}
+
+// The engine grading itself on THIS holding: forward returns of the stock
+// conditioned on the state the engine held. Small samples flagged; backfill
+// provenance noted.
+function StockReceiptsTable({ r, note }) {
+  if (!r || !r.buckets || !r.buckets.length) return null;
+  const th = { fontFamily: DSANS, fontSize: 9, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#475569', textAlign: 'right', padding: '3px 6px' };
+  const td = { fontFamily: DMONO, fontSize: 10.5, textAlign: 'right', padding: '4px 6px', whiteSpace: 'nowrap' };
+  const fmtM = (s) => s ? (s.median >= 0 ? '+' : '') + s.median.toFixed(1) + '%' : '—';
+  const mCol = (s) => s == null ? '#475569' : s.median > 0 ? '#22c55e' : s.median < 0 ? '#ef4444' : '#94a3b8';
+  const label = (k) => k === 'baseline' ? 'All days' : (REC_META[k] ? REC_META[k].label : k);
+  const lCol = (k) => k === 'baseline' ? '#64748b' : (REC_META[k] ? REC_META[k].c : '#94a3b8');
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid #16202e', paddingTop: 10 }}>
+      <div style={{ fontFamily: DSANS, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>
+        Receipts <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· {r.spanStart} → {r.spanEnd}</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead><tr>
+            <th style={{ ...th, textAlign: 'left' }}>State</th><th style={th}>n</th>
+            <th style={th}>20d</th><th style={th}>hit</th><th style={th}>60d</th><th style={th}>hit</th>
+          </tr></thead>
+          <tbody>
+            {r.buckets.map(b => (
+              <tr key={b.key} style={{ borderTop: '1px solid #141c28', opacity: b.fwd20 ? 1 : 0.5 }}>
+                <td style={{ ...td, textAlign: 'left', fontFamily: DSANS, fontSize: 10.5, fontWeight: b.key === 'baseline' ? 400 : 700, color: lCol(b.key) }}>
+                  {label(b.key)}{b.fwd60 && b.fwd60.n < 30 && <span style={{ fontSize: 8.5, color: '#f59e0b', marginLeft: 4 }}>low n</span>}
+                </td>
+                <td style={{ ...td, color: '#64748b' }}>{b.n}</td>
+                <td style={{ ...td, color: mCol(b.fwd20) }}>{fmtM(b.fwd20)}</td>
+                <td style={{ ...td, color: '#94a3b8' }}>{b.fwd20 ? b.fwd20.hit + '%' : '—'}</td>
+                <td style={{ ...td, color: mCol(b.fwd60) }}>{fmtM(b.fwd60)}</td>
+                <td style={{ ...td, color: '#94a3b8' }}>{b.fwd60 ? b.fwd60.hit + '%' : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {note && <div style={{ fontFamily: DSANS, fontSize: 9.5, color: '#475569', lineHeight: 1.4, marginTop: 6 }}>{note}</div>}
+    </div>
+  );
+}
+
+// Basic detail pane (position facts + signals + per-stock receipts).
+function PositionDetail({ p, receipts, receiptsNote }) {
   if (!p) return (
     <div style={{ fontFamily: DSANS, fontSize: 12.5, color: '#64748b', padding: 24, textAlign: 'center' }}>Select a position</div>
   );
@@ -7200,12 +7254,14 @@ function PositionDetail({ p }) {
       {s && row('Sentiment', s.sent && s.sent.score != null ? s.sent.score.toFixed(1) + '/10' : (s.sent && s.sent.status) || '—')}
       {s && s.note && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#94a3b8', lineHeight: 1.45, marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 10 }}>{s.note}</div>}
       {!s && <div style={{ fontFamily: DSANS, fontSize: 11, color: '#64748b', marginTop: 10, borderTop: '1px solid #16202e', paddingTop: 10 }}>Per-stock signals not yet computed for this holding.</div>}
+      <StockReceiptsTable r={receipts} note={receiptsNote} />
     </div>
   );
 }
 
 function PortfolioPage() {
   const { data, err } = usePortfolio();
+  const rx = usePortfolioReceipts();
   const twoPane = useIsMobileD ? !useIsMobileD() : true;
   const [sel, setSel] = useStateD(null);
   const panel = { background: '#0d1520', border: '1px solid #1e2d3d', borderRadius: 16, padding: '16px 18px' };
@@ -7237,12 +7293,12 @@ function PortfolioPage() {
       {twoPane ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 330px', gap: 16, alignItems: 'start' }}>
           <div style={panel}><PositionsTable positions={data.positions} sel={sel} onSel={setSel} /></div>
-          <div style={{ ...panel, position: 'sticky', top: 74 }}><PositionDetail p={selPos} /></div>
+          <div style={{ ...panel, position: 'sticky', top: 74 }}><PositionDetail p={selPos} receipts={sel && rx && rx.symbols ? rx.symbols[sel] : null} receiptsNote={rx && rx.note} /></div>
         </div>
       ) : sel ? (
         <div style={panel}>
           <button onClick={() => setSel(null)} style={{ all: 'unset', cursor: 'pointer', fontFamily: DSANS, fontSize: 11.5, color: '#64748b', marginBottom: 10 }}>← All positions</button>
-          <PositionDetail p={selPos} />
+          <PositionDetail p={selPos} receipts={sel && rx && rx.symbols ? rx.symbols[sel] : null} receiptsNote={rx && rx.note} />
         </div>
       ) : (
         <div style={panel}><PositionsTable positions={data.positions} sel={sel} onSel={setSel} compact /></div>
