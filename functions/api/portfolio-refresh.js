@@ -21,6 +21,12 @@ const MODEL = 'claude-haiku-4-5-20251001';
 const BATCH = 8;
 const FUND_REFRESH_DAYS = 90;
 
+// Non-USD positions skip Finnhub entirely — IBKR tickers collide with
+// unrelated US instruments (the IAU incident: TSX gold miner vs US gold ETF),
+// so querying the bare symbol risks scoring the WRONG company. Exception:
+// verified dual-listings where the US ticker is the same company.
+const DUAL_LISTED_US_OK = ['CNQ'];
+
 const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 
 // Finnhub metric keys vary by company — try candidates in order (honest null when absent).
@@ -115,7 +121,7 @@ export async function onRequest(context) {
     ).run();
 
     const { results: holdings = [] } = await db.prepare(
-      `SELECT symbol, description, asset_class FROM portfolio_positions ORDER BY symbol`
+      `SELECT symbol, description, asset_class, currency FROM portfolio_positions ORDER BY symbol`
     ).all();
     const slice = holdings.slice(start, start + BATCH);
     if (!slice.length) return new Response(JSON.stringify({ done: true, total: holdings.length, start }), { headers: CORS });
@@ -123,6 +129,22 @@ export async function onRequest(context) {
     const report = [];
     for (const h of slice) {
       const r = { symbol: h.symbol };
+      const usDataOk = h.currency === 'USD' || DUAL_LISTED_US_OK.includes(h.symbol);
+
+      if (!usDataOk) {
+        // Honest skip: write a no-news sentiment row so the engine reads
+        // 'no-news' (not an error), and leave fundamentals absent → unavailable.
+        r.fundamentals = `skipped (non-USD listing ${h.currency})`;
+        try {
+          await db.prepare(
+            `INSERT OR REPLACE INTO stock_sentiment (symbol, date, score, confidence, n_articles, drivers, model, created_at)
+             VALUES (?, ?, NULL, NULL, 0, NULL, NULL, ?)`
+          ).bind(h.symbol, today, new Date().toISOString()).run();
+        } catch { /* non-fatal */ }
+        r.sentiment = 'skipped (non-USD listing)';
+        report.push(r);
+        continue;
+      }
 
       // ── Fundamentals (STK only; earnings-triggered or 90d staleness) ──
       if (h.asset_class === 'STK') {

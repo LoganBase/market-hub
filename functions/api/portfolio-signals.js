@@ -157,11 +157,15 @@ export async function onRequest(context) {
     let holdings = [];
     try {
       ({ results: holdings = [] } = await db.prepare(
-        `SELECT symbol, asset_class FROM portfolio_positions`
+        `SELECT symbol, asset_class, currency FROM portfolio_positions`
       ).all());
     } catch { /* table doesn't exist until the first sync — skip, don't error */ }
     if (!holdings.length) return new Response(JSON.stringify({ skipped: true, reason: 'no positions synced' }), { headers: CORS });
-    const syms = holdings.map(h => h.symbol);
+
+    // CAD positions read prices from their TSX Yahoo listing (see refresh.js —
+    // IBKR tickers collide with unrelated US instruments otherwise).
+    const dataSymOf = (h) => h.currency === 'CAD' ? h.symbol.replace(/\./g, '-') + '.TO' : h.symbol;
+    const syms = holdings.map(dataSymOf);
 
     // q-lite for holdings + SPY (lean duplicate of scores.js loadFromD1 — Pages
     // Functions can't share module code across endpoint files).
@@ -238,7 +242,7 @@ export async function onRequest(context) {
     const stmts = [];
     const out = [];
     for (const h of holdings) {
-      const tech = computeTechSignal(q, h.symbol);
+      const tech = computeTechSignal(q, dataSymOf(h));
       const fund = computeFundSignal(fundMap[h.symbol] ?? null, h.asset_class, dataDate);
       const sent = computeSentSignal(sentMap[h.symbol] ?? null);
       const { agg, notes } = aggregate(tech, fund, sent, marketVerb);
@@ -252,7 +256,8 @@ export async function onRequest(context) {
         hist = hr.map(r => r.agg_score).reverse();
       } catch { /* first run */ }
       const st = replayRecState([...hist, agg]);
-      const rec = st.recommendation ?? 'hold';
+      // No computable signals → say so; never a fake HOLD.
+      const rec = agg == null ? 'no-signal' : (st.recommendation ?? 'hold');
 
       const noteParts = [
         tech.score != null ? `Tech ${tech.score.toFixed(1)}` : `Tech ${tech.status}`,

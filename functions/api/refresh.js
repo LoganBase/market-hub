@@ -397,12 +397,17 @@ export async function onRequest(context) {
   // Portfolio Engine: holdings from the IBKR mirror join the refresh universe
   // automatically — a dynamic union, so the symbol list has one source of truth
   // for portfolio names and buying a new stock needs no code change.
+  // CAD positions map to their TSX Yahoo listing (AP.UN → AP-UN.TO): IBKR
+  // tickers collide with unrelated US instruments (a real IAU incident — the
+  // TSX gold miner shares its ticker with the US gold ETF), so the data series
+  // is stored under the exchange-qualified symbol.
   let symbols = ALL_SYMBOLS;
   try {
     const { results: pf = [] } = await db.prepare(
-      `SELECT DISTINCT symbol FROM portfolio_positions WHERE asset_class IN ('STK','ETF')`
+      `SELECT DISTINCT symbol, currency FROM portfolio_positions WHERE asset_class IN ('STK','ETF')`
     ).all();
-    const extra = pf.map(r => r.symbol).filter(s => s && !ALL_SYMBOLS.includes(s));
+    const dataSym = (r) => r.currency === 'CAD' ? r.symbol.replace(/\./g, '-') + '.TO' : r.symbol;
+    const extra = pf.map(dataSym).filter(s => s && !ALL_SYMBOLS.includes(s));
     if (extra.length) symbols = [...ALL_SYMBOLS, ...extra];
   } catch { /* portfolio tables not created yet — static list only */ }
 
