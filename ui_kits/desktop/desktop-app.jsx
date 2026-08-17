@@ -1404,27 +1404,21 @@ function ScoreTile({ card, onOpen, active }) {
         ? <CrowdSignalsGlanceKpis compact={true} onStatus={setCrowdStatus} />
         : card.id === 'positioning'
         ? <PositioningGlanceKpis compact={true} onStatus={setPositioningStatus} />
-        : (() => {
-            const shown = card.rows.slice(0, 3);
-            const cols = mob ? Math.min(shown.length, 2) : shown.length;
-            return (
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 10 }}>
-                {shown.map((r, i) => {
-                  const rs = DSIG[r[3]];
-                  const divider = i % cols !== 0;
-                  return (
-                    <div key={i} style={{ minWidth: 0, paddingLeft: divider ? 11 : 0, borderLeft: divider ? '1px solid #1b2736' : 'none' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
-                        <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
-                      </div>
-                      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r[0]}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
+        : <div style={{ display: 'flex', gap: 10 }}>
+            {card.rows.slice(0, 3).map((r, i) => {
+              const rs = DSIG[r[3]];
+              return (
+                <div key={i} style={{ flex: 1, minWidth: 0, paddingLeft: i ? 11 : 0, borderLeft: i ? '1px solid #1b2736' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
+                    <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
+                  </div>
+                  <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r[0]}</div>
+                </div>
+              );
+            })}
+          </div>
+      }
     </button>
   );
 }
@@ -1894,26 +1888,20 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
                   ? <YieldGlanceKpis card={c} compact={mob} />
                   : id === 'crowdsignals'
                   ? <CrowdSignalsGlanceKpis compact={mob} />
-                  : (() => {
-                      const shown = c.rows.slice(0, 3);
-                      const cols = mob ? Math.min(shown.length, 2) : shown.length;
-                      return (
-                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: mob ? 10 : 22, flex: 1 }}>
-                          {shown.map((r, i) => {
-                            const rs = DSIG[r[3]];
-                            return (
-                              <div key={i} style={{ minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}` }} />
-                                  <span style={{ fontFamily: DMONO, fontSize: mob ? 11.5 : 13.5, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
-                                </div>
-                                <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{r[0]}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()
+                  : <div style={{ display: 'flex', gap: mob ? 10 : 22, flex: 1 }}>
+                      {c.rows.slice(0, 3).map((r, i) => {
+                        const rs = DSIG[r[3]];
+                        return (
+                          <div key={i} style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
+                              <span style={{ fontFamily: DMONO, fontSize: mob ? 11.5 : 13.5, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
+                            </div>
+                            <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r[0]}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                 }
                 {!mob && (id === 'regime'
                   ? <RegimeMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />
