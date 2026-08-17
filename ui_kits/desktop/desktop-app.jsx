@@ -1354,6 +1354,7 @@ function CrowdSignalsMiniSpark({ seed, trend, color, w = 56, h = 20 }) {
 
 // ── Scorecard tile (grid) ──
 function ScoreTile({ card, onOpen, active }) {
+  const mob = useIsMobile();
   const [hover, setHover] = useStateA(false);
   const [crowdStatus, setCrowdStatus] = useStateA(null);
   const [currencyStatus, setCurrencyStatus] = useStateA(null);
@@ -1393,7 +1394,7 @@ function ScoreTile({ card, onOpen, active }) {
           : card.id === 'positioning'
           ? <PositioningMiniSpark seed={card.seed} trend={card.trend} color={sg.c} w={56} h={20} />
           : <SparkD seed={card.seed} trend={card.trend} color="#a855f7" w={56} h={20} />}
-        <StatusPill status={effStatus} size="sm" />
+        {!mob && <StatusPill status={effStatus} size="sm" />}
       </div>
       {card.id === 'yield'
         ? <YieldGlanceKpis card={card} compact={true} onStatus={setYieldStatus} />
@@ -1403,21 +1404,27 @@ function ScoreTile({ card, onOpen, active }) {
         ? <CrowdSignalsGlanceKpis compact={true} onStatus={setCrowdStatus} />
         : card.id === 'positioning'
         ? <PositioningGlanceKpis compact={true} onStatus={setPositioningStatus} />
-        : <div style={{ display: 'flex', gap: 10 }}>
-            {card.rows.slice(0, 3).map((r, i) => {
-              const rs = DSIG[r[3]];
-              return (
-                <div key={i} style={{ flex: 1, minWidth: 0, paddingLeft: i ? 11 : 0, borderLeft: i ? '1px solid #1b2736' : 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
-                    <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
-                  </div>
-                  <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r[0]}</div>
-                </div>
-              );
-            })}
-          </div>
-      }
+        : (() => {
+            const shown = card.rows.slice(0, 3);
+            const cols = mob ? Math.min(shown.length, 2) : shown.length;
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 10 }}>
+                {shown.map((r, i) => {
+                  const rs = DSIG[r[3]];
+                  const divider = i % cols !== 0;
+                  return (
+                    <div key={i} style={{ minWidth: 0, paddingLeft: divider ? 11 : 0, borderLeft: divider ? '1px solid #1b2736' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
+                        <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
+                      </div>
+                      <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r[0]}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
     </button>
   );
 }
@@ -1664,7 +1671,7 @@ function YieldGlanceRow({ c, onOpen }) {
       <span style={{ fontFamily: DSANS, fontSize: mob ? 14 : 15.5, fontWeight: 600, color: '#e8edf5', width: mob ? 82 : 150, flexShrink: 0 }}>{c.title}</span>
       <YieldGlanceKpis card={c} compact={mob} onStatus={setLiveStatus} />
       {!mob && <YieldMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />}
-      <StatusPill status={eff} size="sm" />
+      {!mob && <StatusPill status={eff} size="sm" />}
       <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
   );
@@ -1682,7 +1689,7 @@ function CurrencyGlanceRow({ c, onOpen }) {
       <span style={{ fontFamily: DSANS, fontSize: mob ? 14 : 15.5, fontWeight: 600, color: '#e8edf5', width: mob ? 82 : 150, flexShrink: 0 }}>{c.title}</span>
       <CurrencyGlanceKpis compact={mob} onStatus={setLiveStatus} />
       {!mob && <CurrencyMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />}
-      <StatusPill status={eff} size="sm" />
+      {!mob && <StatusPill status={eff} size="sm" />}
       <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
   );
@@ -1794,7 +1801,7 @@ function PositioningGlanceRow({ c, onOpen }) {
       <span style={{ fontFamily: DSANS, fontSize: mob ? 14 : 15.5, fontWeight: 600, color: '#e8edf5', width: mob ? 82 : 150, flexShrink: 0 }}>{c.title}</span>
       <PositioningGlanceKpis compact={mob} onStatus={setLiveStatus} />
       {!mob && <PositioningMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />}
-      <StatusPill status={eff} size="sm" />
+      {!mob && <StatusPill status={eff} size="sm" />}
       <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
   );
@@ -1812,7 +1819,7 @@ function CrowdSignalsGlanceRow({ c, onOpen }) {
       <span style={{ fontFamily: DSANS, fontSize: mob ? 14 : 15.5, fontWeight: 600, color: '#e8edf5', width: mob ? 82 : 150, flexShrink: 0 }}>{c.title}</span>
       <CrowdSignalsGlanceKpis compact={mob} onStatus={setLiveStatus} />
       {!mob && <CrowdSignalsMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />}
-      <StatusPill status={eff} size="sm" />
+      {!mob && <StatusPill status={eff} size="sm" />}
       <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
   );
@@ -1887,20 +1894,26 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
                   ? <YieldGlanceKpis card={c} compact={mob} />
                   : id === 'crowdsignals'
                   ? <CrowdSignalsGlanceKpis compact={mob} />
-                  : <div style={{ display: 'flex', gap: mob ? 10 : 22, flex: 1 }}>
-                      {c.rows.slice(0, mob ? 2 : 3).map((r, i) => {
-                        const rs = DSIG[r[3]];
-                        return (
-                          <div key={i} style={{ minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}` }} />
-                              <span style={{ fontFamily: DMONO, fontSize: mob ? 11.5 : 13.5, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
-                            </div>
-                            <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{r[0]}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  : (() => {
+                      const shown = c.rows.slice(0, 3);
+                      const cols = mob ? Math.min(shown.length, 2) : shown.length;
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: mob ? 10 : 22, flex: 1 }}>
+                          {shown.map((r, i) => {
+                            const rs = DSIG[r[3]];
+                            return (
+                              <div key={i} style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}` }} />
+                                  <span style={{ fontFamily: DMONO, fontSize: mob ? 11.5 : 13.5, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{r[1].split('\n')[0]}</span>
+                                </div>
+                                <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{r[0]}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
                 }
                 {!mob && (id === 'regime'
                   ? <RegimeMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />
@@ -1927,7 +1940,7 @@ function OptionGlancePage({ D, open: openProp, onSetOpen }) {
                   : id === 'positioning'
                   ? <PositioningMiniSpark seed={c.seed} trend={c.trend} color={sg.c} w={64} h={22} />
                   : <SparkD seed={c.seed} trend={c.trend} color="#a855f7" w={64} h={22} />)}
-                <StatusPill status={c.status} size="sm" />
+                {!mob && <StatusPill status={c.status} size="sm" />}
                 <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </button>
             );
