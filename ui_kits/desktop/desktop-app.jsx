@@ -1073,7 +1073,7 @@ function YieldGlanceKpis({ card, compact = true, onStatus }) {
   ];
   if (compact) {
     return (
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 10, flex: 1 }}>
         {kpis.map(({ label, val, tone }, i) => {
           const rs = DSIG[tone] || DSIG.neutral;
           return (
@@ -1144,7 +1144,7 @@ function CurrencyGlanceKpis({ compact = true, onStatus }) {
   ];
   if (compact) {
     return (
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 10, flex: 1 }}>
         {kpis.map(({ label, val, tone }, i) => {
           const rs = DSIG[tone] || DSIG.neutral;
           return (
@@ -1216,7 +1216,7 @@ function CrowdSignalsGlanceKpis({ compact = true, onStatus }) {
   const compactItems = items;
   if (compact) {
     return (
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 10, flex: 1 }}>
         {compactItems.map(({ label, val, tone }, i) => {
           const rs = DSIG[tone] || DSIG.neutral;
           return (
@@ -1724,7 +1724,7 @@ function PositioningGlanceKpis({ compact = true, onStatus }) {
   })) : fallback;
   if (compact) {
     return (
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 10, flex: 1 }}>
         {items.map(({ label, val, tone }, i) => {
           const rs = DSIG[tone] || DSIG.neutral;
           return (

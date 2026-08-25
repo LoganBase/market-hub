@@ -1493,12 +1493,12 @@ function InterMarketGlanceRow({ data, onOpen }) {
         {(mob ? top.slice(0, 2) : top).map(p => {
           const up = p.regime === 'up', c = up ? '#22c55e' : '#ef4444';
           return (
-            <div key={p.key} style={{ minWidth: 0 }}>
+            <div key={p.key} style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}55`, flexShrink: 0 }} />
                 <span style={{ fontFamily: DMONO, fontSize: mob ? 11.5 : 13.5, fontWeight: 600, color: c, whiteSpace: 'nowrap' }}>{up ? '▲ risk-on' : '▼ risk-off'}</span>
               </div>
-              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{p.label}</div>
+              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</div>
             </div>
           );
         })}
