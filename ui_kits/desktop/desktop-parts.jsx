@@ -1505,7 +1505,7 @@ function InterMarketGlanceRow({ data, onOpen }) {
         {!top.length && <span style={{ fontFamily: DSANS, fontSize: 12, color: '#475569' }}>Loading…</span>}
       </div>
       {!mob && <InterMarketMiniSpark data={data} color={sg.c} w={64} h={22} />}
-      <StatusPill status={status} size="sm" />
+      {!mob && <StatusPill status={status} size="sm" />}
       <svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" stroke="#334155" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
   );

@@ -1077,7 +1077,7 @@ function YieldGlanceKpis({ card, compact = true, onStatus }) {
         {kpis.map(({ label, val, tone }, i) => {
           const rs = DSIG[tone] || DSIG.neutral;
           return (
-            <div key={i} style={{ flex: 1, minWidth: 0, paddingLeft: i ? 11 : 0, borderLeft: i ? '1px solid #1b2736' : 'none' }}>
+            <div key={i} style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
                 <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{val}</span>
@@ -1148,7 +1148,7 @@ function CurrencyGlanceKpis({ compact = true, onStatus }) {
         {kpis.map(({ label, val, tone }, i) => {
           const rs = DSIG[tone] || DSIG.neutral;
           return (
-            <div key={i} style={{ flex: 1, minWidth: 0, paddingLeft: i ? 11 : 0, borderLeft: i ? '1px solid #1b2736' : 'none' }}>
+            <div key={i} style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
                 <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{val}</span>
@@ -1225,7 +1225,7 @@ function CrowdSignalsGlanceKpis({ compact = true, onStatus }) {
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
                 <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{val}</span>
               </div>
-              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap' }}>{label}</div>
+              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
             </div>
           );
         })}
@@ -1242,7 +1242,7 @@ function CrowdSignalsGlanceKpis({ compact = true, onStatus }) {
               <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
               <span style={{ fontFamily: DMONO, fontSize: 13.5, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{val}</span>
             </div>
-            <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{label}</div>
+            <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
           </div>
         );
       })}
@@ -1733,7 +1733,7 @@ function PositioningGlanceKpis({ compact = true, onStatus }) {
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
                 <span style={{ fontFamily: DMONO, fontSize: 14, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{val}</span>
               </div>
-              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap' }}>{label}</div>
+              <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
             </div>
           );
         })}
@@ -1750,7 +1750,7 @@ function PositioningGlanceKpis({ compact = true, onStatus }) {
               <span style={{ width: 5, height: 5, borderRadius: '50%', background: rs.c, boxShadow: `0 0 5px ${rs.glow}`, flexShrink: 0 }} />
               <span style={{ fontFamily: DMONO, fontSize: 13.5, fontWeight: 600, color: rs.c, whiteSpace: 'nowrap' }}>{val}</span>
             </div>
-            <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap' }}>{label}</div>
+            <div style={{ fontFamily: DSANS, fontSize: 10.5, color: '#64748b', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
           </div>
         );
       })}
