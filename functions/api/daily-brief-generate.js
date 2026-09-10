@@ -37,9 +37,9 @@ const SECTOR_VOCAB = [
   'Commodities', 'Credit', 'FX/Dollar', 'Macro/Data', 'Geopolitics',
 ];
 
-const SYSTEM_PROMPT = `You are a financial market analyst writing a daily market close summary in the style of an institutional wire service (Briefing.com's "Close Update" is the reference style: dry, numbers-first, no hedging, no speculation beyond what the data and news support).
+const SYSTEM_PROMPT = `You are a financial market analyst writing a daily market close summary in the style of an institutional wire service. Briefing.com's "Closing Market Summary" is the reference style: dry, numbers-first, no hedging, no speculation beyond what the data and news support. Every real Briefing.com close update opens the same way — index moves plus the single clearest immediate cause, in one sentence — before working down through sectors, rates, and the day's news catalysts.
 
-You will be given (1) today's real closing price data pulled directly from the site's own database, and (2) today's real general market news headlines from Finnhub. Use ONLY these two sources — never invent a price, a percentage, or a news event that isn't in the provided data. If the news doesn't clearly explain a price move, describe the move without inventing a cause.
+You will be given (1) today's real closing price data pulled directly from the site's own database, and (2) today's real general market news headlines from Finnhub. Use ONLY these two sources — never invent a price, a percentage, or a news event that isn't in the provided data. If a news article isn't clearly relevant to explaining today's market action, ignore it rather than forcing it into a bullet. If the news doesn't clearly explain a price move, describe the move without inventing a cause.
 
 Return ONLY a valid JSON object. No markdown. No code fences. No explanation.
 
@@ -50,11 +50,27 @@ Required format:
   "sector": "string"
 }
 
+Structure, in order of priority:
+1. Open with the major index moves (SPY, QQQ, IWM) and the single clearest immediate cause — this is always bullet #1.
+2. If SPY (cap-weighted) and RSP (equal-weighted) diverge by 0.3% or more, say so explicitly — it signals whether the move was broad-based or narrow/concentrated in a handful of large stocks. This is one of the most important signals in the data; don't bury it.
+3. Name the 2-3 sectors that most explain the day's story (not an exhaustive 11-sector list), with their % change.
+4. Weave in specific stock or catalyst stories from the Finnhub news that explain those sector moves, when the news actually supports it — don't force a connection that isn't there.
+5. Include Treasury yield moves (10-year, and 2-year if it moved notably differently) in basis points when relevant to the session's narrative — rate moves are frequently the actual driver of the day, not just background color.
+6. If the news names a specific near-term catalyst (a Fed meeting, an economic release, notable earnings), close with it — otherwise omit rather than padding.
+
 Rules:
-- bullets: array of 5-8 strings, ordered by market significance (highest first). Each is one complete sentence under 25 words. Cover: index performance (cap-weight vs equal-weight if they diverge), the sector(s) that moved most and why (per the news, if available), yields/VIX if notable, and the day's clearest news catalyst.
-- sentiment: single integer from -5 to +5 reflecting the net impact on US equity markets for this session, consistent with the actual index % moves provided.
+- bullets: array of 5-8 strings, ordered by market significance (highest first). Each is one complete sentence under 25 words. No redundancy between bullets.
+- sentiment: single integer from -5 to +5 reflecting the net impact on US equity markets for this session. Weight the cap-weighted indices (SPY/QQQ/DJIA) most heavily since that's the conventional "market" read, but let clearly negative breadth (RSP notably lagging, most of the 11 sectors red) pull the number down even when headline indices look flat or slightly positive — a narrow, concentrated "up" day is not the same as a healthy one.
+  -5 = extreme panic/crash day
+  -3 = clearly bearish (meaningful losses, risk-off)
+  -1 = slightly bearish (modest declines, mild caution) — OR a headline-flat/positive day where breadth was clearly negative
+   0 = flat or genuinely mixed
+  +1 = slightly bullish (modest gains, risk-on lean)
+  +3 = clearly bullish (solid rally, broad participation across most sectors)
+  +5 = extreme euphoria/surge day
 - sector: the single dominant theme driving today's session. Must be EXACTLY one of:
   ${SECTOR_VOCAB.join(' | ')}
+  Disambiguation: use Fed/Policy only when a specific Fed official's remarks or an FOMC-related action is the proximate driver that day. Use Macro/Data when a scheduled economic release (jobs, inflation, PMI, GDP) is the driver. Use Rates when Treasury-market moves themselves are the story without a clear same-day policy or data trigger. Use Equities when the day is driven by company-specific earnings or news rather than any macro theme. Use Geopolitics for conflict- or trade-tension-driven days, even when the transmission mechanism into markets is oil prices.
 
 Return ONLY the JSON object. Nothing else.`;
 
@@ -84,15 +100,34 @@ async function fetchTodayVsPrior(db, symbols) {
   return out;
 }
 
+async function fetchYtd(db, symbols, dataDate) {
+  const year = dataDate.slice(0, 4);
+  const ph = symbols.map(() => '?').join(',');
+  // First trading day on/after Jan 1 for each symbol this year.
+  const { results = [] } = await db.prepare(
+    `SELECT dp.symbol, dp.close
+     FROM daily_prices dp
+     INNER JOIN (
+       SELECT symbol, MIN(date) AS d FROM daily_prices
+       WHERE symbol IN (${ph}) AND date >= ? AND date < ?
+       GROUP BY symbol
+     ) f ON dp.symbol = f.symbol AND dp.date = f.d`
+  ).bind(...symbols, `${year}-01-01`, `${year}-02-01`).all();
+  return Object.fromEntries(results.map(r => [r.symbol, r.close]));
+}
+
 function fmtPct(x) { return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(2) + '%'; }
 function fmtLevel(x) { return x == null ? '—' : x.toFixed(2); }
 
-function buildDataBlock(idx, sec, yld, vix, cmd, fx, breadth, dataDate) {
+function buildDataBlock(idx, sec, yld, vix, cmd, fx, breadth, ytdStart, dataDate) {
   const lines = [];
   lines.push(`DATA DATE: ${dataDate}`);
   lines.push('');
-  lines.push('INDICES (level, % change from prior close):');
-  for (const s of INDEX_SYMS) lines.push(`  ${s}: ${fmtLevel(idx[s].close)} (${fmtPct(idx[s].pct)})`);
+  lines.push('INDICES (level, % change from prior close, YTD % change):');
+  for (const s of INDEX_SYMS) {
+    const ytdPct = pctChange(idx[s].close, ytdStart[s]);
+    lines.push(`  ${s}: ${fmtLevel(idx[s].close)} (${fmtPct(idx[s].pct)}, YTD ${fmtPct(ytdPct)})`);
+  }
   lines.push('');
   lines.push('SECTORS (% change):');
   for (const s of SECTOR_SYMS) lines.push(`  ${s}: ${fmtPct(sec[s].pct)}`);
@@ -204,7 +239,9 @@ async function _onRequest(context) {
     `SELECT pct_above_200d, pct_above_50d, adid_nyse, adid_nasdaq FROM market_breadth WHERE date = ?`
   ).bind(dataDate).first();
 
-  const dataBlock = buildDataBlock(idx, sec, yld, vix, cmd, fx, breadth, dataDate);
+  const ytdStart = await fetchYtd(db, INDEX_SYMS, dataDate);
+
+  const dataBlock = buildDataBlock(idx, sec, yld, vix, cmd, fx, breadth, ytdStart, dataDate);
 
   // 2. Pull today's real news.
   let articles = [];
