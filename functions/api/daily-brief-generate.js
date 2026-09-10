@@ -143,6 +143,31 @@ function buildNewsBlock(articles) {
   return `NEWS (most recent first):\n${lines.join('\n')}`;
 }
 
+async function callAnthropic(userPrompt, apiKey) {
+  const res = await fetch(ANTHROPIC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Anthropic ${res.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const rawText = data.content?.[0]?.text ?? '';
+  try { return JSON.parse(rawText); }
+  catch {
+    const match = rawText.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON found in response: ' + rawText.slice(0, 200));
+    return JSON.parse(match[0]);
+  }
+}
+
 export async function onRequest(context) {
   try {
     return await _onRequest(context);
@@ -187,34 +212,21 @@ async function _onRequest(context) {
   catch (e) { /* non-fatal — proceed with data-only bullets */ }
   const newsBlock = buildNewsBlock(articles);
 
-  // 3. Synthesize with Sonnet 5.
+  // 3. Synthesize with Sonnet 5. One retry — this runs once nightly, and a
+  // single slow/failed response shouldn't cost a whole day's brief.
   const userPrompt = `${dataBlock}\n\n${newsBlock}`;
-  let result;
-  try {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Anthropic ${res.status}: ${errText.slice(0, 300)}`);
+  let result, lastErr;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      result = await callAnthropic(userPrompt, env.ANTHROPIC_API_KEY);
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
     }
-    const data = await res.json();
-    const rawText = data.content?.[0]?.text ?? '';
-    try { result = JSON.parse(rawText); }
-    catch {
-      const match = rawText.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('No JSON found in response: ' + rawText.slice(0, 200));
-      result = JSON.parse(match[0]);
-    }
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 502, headers: CORS });
+  }
+  if (lastErr) {
+    return new Response(JSON.stringify({ error: lastErr.message }), { status: 502, headers: CORS });
   }
 
   // 4. Validate.
