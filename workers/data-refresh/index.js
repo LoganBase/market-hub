@@ -200,6 +200,14 @@ async function runRefresh(env) {
   const fred = await callHub(`${siteUrl}/api/fred-refresh`, hubToken);
   console.log(`[data-refresh] fred-refresh done — ${fred.error ? 'error: ' + fred.error : 'saved: ' + Object.keys(fred.saved ?? {}).join(', ')}`);
 
+  // Pull the day's analyst upgrade/downgrade actions (FMP) — restores the
+  // Up/Downgrades table Briefing.com's emails used to carry. Runs before
+  // daily-brief-generate so a future prompt revision can fold notable grades
+  // into the bullets; for now it just populates analyst_grades in D1.
+  console.log(`[data-refresh] running analyst-grades-refresh`);
+  const grades = await callHub(`${siteUrl}/api/analyst-grades-refresh`, hubToken);
+  console.log(`[data-refresh] analyst-grades-refresh — ${grades.error ? 'error: ' + grades.error : grades.gradesStored + ' grades stored'}`);
+
   // Generate today's daily_briefs row — grounded in today's own price data +
   // Finnhub general news, since today's prices are now fresh. Replaces the
   // Briefing.com email pipeline; /api/macro-brief and brief-theme (below)
@@ -277,6 +285,7 @@ async function runRefresh(env) {
     batch2Error:    b2.error,
     batch3Error:    b3.error,
     fred,
+    grades,
     signals:        sig,
     health,
   };

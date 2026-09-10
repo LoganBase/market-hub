@@ -2,15 +2,13 @@
  * Market Hub — Analyst Upgrades/Downgrades Refresh
  * Cloudflare Pages Function: GET /api/analyst-grades-refresh
  *
- * Pulls today's market-wide analyst grade actions (upgrades/downgrades) from
- * FMP — restores the "Up/Downgrades" table Briefing.com's emails used to
- * carry, which nothing in the current pipeline replicates.
- *
- * NOTE: endpoint path is a best guess at FMP's current API (their docs site
- * blocks automated fetches) — first deploy is to verify live against the
- * real key/plan tier, same as econ-calendar-refresh.
+ * Pulls the latest market-wide analyst grade actions (upgrades/downgrades)
+ * from FMP — restores the "Up/Downgrades" table Briefing.com's emails used
+ * to carry, which nothing else in the pipeline replicates. Free FMP tier;
+ * capped at limit=10 (higher values 402 under the free plan).
  *
  * Auth: X-Hub-Token. Env: DB, FMP_API_KEY.
+ * Runs nightly from data-refresh.
  */
 
 const CORS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
@@ -32,15 +30,61 @@ async function _onRequest(context) {
   if (request.headers.get('X-Hub-Token') !== env.HUB_TOKEN) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
   }
+  const db = env.DB;
+  if (!db) return new Response(JSON.stringify({ error: 'D1 not configured' }), { status: 200, headers: CORS });
   if (!env.FMP_API_KEY) return new Response(JSON.stringify({ error: 'FMP_API_KEY not set' }), { status: 200, headers: CORS });
 
   const url = `${FMP_BASE}/grades-latest-news?page=0&limit=10&apikey=${env.FMP_API_KEY}`;
-  const res = await fetch(url);
-  const bodyText = await res.text();
+  let grades;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      return new Response(JSON.stringify({ error: `FMP ${res.status}: ${text.slice(0, 300)}` }), { status: 200, headers: CORS });
+    }
+    grades = await res.json();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'FMP fetch failed: ' + e.message }), { status: 200, headers: CORS });
+  }
+
+  if (!Array.isArray(grades)) {
+    return new Response(JSON.stringify({ error: 'Unexpected FMP response shape', got: typeof grades }), { status: 200, headers: CORS });
+  }
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS analyst_grades (
+      symbol             TEXT NOT NULL,
+      published_date     TEXT NOT NULL,
+      grading_company    TEXT,
+      previous_grade     TEXT,
+      new_grade          TEXT,
+      action             TEXT,
+      price_when_posted  REAL,
+      news_title         TEXT,
+      news_url           TEXT,
+      fetched_at         TEXT NOT NULL,
+      PRIMARY KEY (symbol, published_date, grading_company)
+    )
+  `).run();
+
+  const now = new Date().toISOString();
+  const stmts = grades.map(g => db.prepare(`
+    INSERT INTO analyst_grades (symbol, published_date, grading_company, previous_grade, new_grade, action, price_when_posted, news_title, news_url, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(symbol, published_date, grading_company) DO UPDATE SET
+      previous_grade = excluded.previous_grade, new_grade = excluded.new_grade,
+      action = excluded.action, price_when_posted = excluded.price_when_posted,
+      news_title = excluded.news_title, news_url = excluded.news_url, fetched_at = excluded.fetched_at
+  `).bind(
+    g.symbol ?? 'UNKNOWN', g.publishedDate ?? now, g.gradingCompany ?? null,
+    g.previousGrade ?? null, g.newGrade ?? null, g.action ?? null,
+    g.priceWhenPosted ?? null, g.newsTitle ?? null, g.newsURL ?? null, now,
+  ));
+
+  if (stmts.length) await db.batch(stmts);
 
   return new Response(JSON.stringify({
-    httpStatus: res.status,
-    urlTried: url.replace(env.FMP_API_KEY, 'REDACTED'),
-    bodySample: bodyText.slice(0, 1000),
-  }), { status: 200, headers: CORS });
+    gradesStored: grades.length,
+    sample: grades.slice(0, 3).map(g => ({ symbol: g.symbol, action: g.action, from: g.previousGrade, to: g.newGrade, by: g.gradingCompany })),
+  }), { headers: CORS });
 }
