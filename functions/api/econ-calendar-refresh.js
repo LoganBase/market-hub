@@ -48,15 +48,15 @@ async function _onRequest(context) {
     const res = await fetch(url);
     if (!res.ok) {
       const text = await res.text();
-      return new Response(JSON.stringify({ error: `FMP ${res.status}: ${text.slice(0, 300)}`, urlTried: url.replace(env.FMP_API_KEY, 'REDACTED') }), { status: 502, headers: CORS });
+      return new Response(JSON.stringify({ error: `FMP ${res.status}: ${text.slice(0, 300)}`, urlTried: url.replace(env.FMP_API_KEY, 'REDACTED') }), { status: 200, headers: CORS });
     }
     events = await res.json();
   } catch (e) {
-    return new Response(JSON.stringify({ error: 'FMP fetch failed: ' + e.message }), { status: 502, headers: CORS });
+    return new Response(JSON.stringify({ error: 'FMP fetch failed: ' + e.message }), { status: 200, headers: CORS });
   }
 
   if (!Array.isArray(events)) {
-    return new Response(JSON.stringify({ error: 'Unexpected FMP response shape', got: typeof events, sample: JSON.stringify(events).slice(0, 500) }), { status: 502, headers: CORS });
+    return new Response(JSON.stringify({ error: 'Unexpected FMP response shape', got: typeof events, sample: JSON.stringify(events).slice(0, 500) }), { status: 200, headers: CORS });
   }
 
   // Keep US events only — this is what matters for a US equity market brief.
