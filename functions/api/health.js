@@ -41,16 +41,20 @@ export async function onRequest(context) {
   }
 
   // ── Stale symbols ─────────────────────────────────────────────────────────
-  // Any symbol whose most recent row is older than SPY's watermark.
+  // Any symbol whose most recent row (within a recent window) is older than
+  // SPY's watermark. Bounded to the last 20 days — daily_prices has 400K+ rows
+  // of history and an unbounded GROUP BY was reading the entire table on every
+  // call (this endpoint is monitor-safe by design, so it gets hit often).
   const { results: staleSymbols } = await db
     .prepare(`
       SELECT symbol, MAX(date) AS last_date
       FROM daily_prices
+      WHERE date >= date(?, '-20 days')
       GROUP BY symbol
       HAVING last_date < ?
       ORDER BY last_date, symbol
     `)
-    .bind(dataDate).all();
+    .bind(dataDate, dataDate).all();
 
   // ── Symbol count on the reference date ───────────────────────────────────
   const { results: [ref] } = await db
@@ -73,9 +77,10 @@ export async function onRequest(context) {
 
   // ── Indicator lag ────────────────────────────────────────────────────────
   // Symbols where indicators are behind prices — compared via separate
-  // aggregates (avoids a full cross-table JOIN on 400K+ rows).
-  const { results: priceMax }  = await db.prepare(`SELECT symbol, MAX(date) AS last FROM daily_prices GROUP BY symbol`).all();
-  const { results: indMax }    = await db.prepare(`SELECT symbol, MAX(date) AS last FROM indicators    GROUP BY symbol`).all();
+  // aggregates (avoids a full cross-table JOIN), bounded to a recent window
+  // for the same row-read reason as the stale-symbols check above.
+  const { results: priceMax }  = await db.prepare(`SELECT symbol, MAX(date) AS last FROM daily_prices WHERE date >= date(?, '-20 days') GROUP BY symbol`).bind(dataDate).all();
+  const { results: indMax }    = await db.prepare(`SELECT symbol, MAX(date) AS last FROM indicators    WHERE date >= date(?, '-20 days') GROUP BY symbol`).bind(dataDate).all();
   const indMap = Object.fromEntries(indMax.map(r => [r.symbol, r.last]));
   const indLag = priceMax
     .filter(r => !indMap[r.symbol] || indMap[r.symbol] < r.last)
