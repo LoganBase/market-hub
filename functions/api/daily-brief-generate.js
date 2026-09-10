@@ -39,7 +39,7 @@ const SECTOR_VOCAB = [
 
 const SYSTEM_PROMPT = `You are a financial market analyst writing a daily market close summary in the style of an institutional wire service. Briefing.com's "Closing Market Summary" is the reference style: dry, numbers-first, no hedging, no speculation beyond what the data and news support. Every real Briefing.com close update opens the same way — index moves plus the single clearest immediate cause, in one sentence — before working down through sectors, rates, and the day's news catalysts.
 
-You will be given (1) today's real closing price data pulled directly from the site's own database, and (2) today's real general market news headlines from Finnhub. Use ONLY these two sources — never invent a price, a percentage, or a news event that isn't in the provided data. If a news article isn't clearly relevant to explaining today's market action, ignore it rather than forcing it into a bullet. If the news doesn't clearly explain a price move, describe the move without inventing a cause.
+You will be given (1) today's real closing price data pulled directly from the site's own database, (2) today's real general market news headlines from Finnhub, and (3) today's real analyst upgrade/downgrade actions. Use ONLY these three sources — never invent a price, a percentage, a news event, or an analyst action that isn't in the provided data. If a news article isn't clearly relevant to explaining today's market action, ignore it rather than forcing it into a bullet. If the news doesn't clearly explain a price move, describe the move without inventing a cause.
 
 Return ONLY a valid JSON object. No markdown. No code fences. No explanation.
 
@@ -55,8 +55,9 @@ Structure, in order of priority:
 2. If SPY (cap-weighted) and RSP (equal-weighted) diverge by 0.3% or more, say so explicitly — it signals whether the move was broad-based or narrow/concentrated in a handful of large stocks. This is one of the most important signals in the data; don't bury it.
 3. Name the 2-3 sectors that most explain the day's story (not an exhaustive 11-sector list), with their % change.
 4. Weave in specific stock or catalyst stories from the Finnhub news that explain those sector moves, when the news actually supports it — don't force a connection that isn't there.
-5. Include Treasury yield moves (10-year, and 2-year if it moved notably differently) in basis points when relevant to the session's narrative — rate moves are frequently the actual driver of the day, not just background color.
-6. If the news names a specific near-term catalyst (a Fed meeting, an economic release, notable earnings), close with it — otherwise omit rather than padding.
+5. If any analyst grade actions are provided, mention one only if it's a well-known, widely-held name (large/mega-cap, the kind of company a general market audience would recognize) and it's notable enough to matter — a multi-notch move, or a name relevant to the day's sector story. Ignore obscure, illiquid, or unfamiliar tickers even if graded. It's fine to omit this entirely if nothing qualifies.
+6. Include Treasury yield moves (10-year, and 2-year if it moved notably differently) in basis points when relevant to the session's narrative — rate moves are frequently the actual driver of the day, not just background color.
+7. If the news names a specific near-term catalyst (a Fed meeting, an economic release, notable earnings), close with it — otherwise omit rather than padding.
 
 Rules:
 - bullets: array of 5-8 strings, ordered by market significance (highest first). Each is one complete sentence under 25 words. No redundancy between bullets.
@@ -169,6 +170,26 @@ async function fetchFinnhubGeneralNews(apiKey) {
     .slice(0, 12);
 }
 
+async function fetchGrades(db) {
+  // analyst-grades-refresh runs immediately before this in the nightly cron
+  // and stores ~10 rows per run — grab the latest batch by our own fetched_at
+  // rather than FMP's published_date, which doesn't reliably align to the
+  // trading-date boundary (can land just after UTC midnight into "tomorrow").
+  const { results = [] } = await db.prepare(
+    `SELECT symbol, grading_company, previous_grade, new_grade, action
+     FROM analyst_grades ORDER BY fetched_at DESC LIMIT 10`
+  ).all();
+  return results;
+}
+
+function buildGradesBlock(grades) {
+  if (!grades.length) return 'ANALYST GRADES: none today.';
+  const lines = grades.map(g =>
+    `  ${g.symbol}: ${g.action ?? '—'} — ${g.previous_grade ?? '?'} → ${g.new_grade ?? '?'} (${g.grading_company ?? 'unknown firm'})`
+  );
+  return `ANALYST GRADES (today's upgrades/downgrades — mention only if the ticker is a well-known, widely held name; ignore obscure/illiquid symbols):\n${lines.join('\n')}`;
+}
+
 function buildNewsBlock(articles) {
   if (!articles.length) return 'NEWS: none available in the lookback window.';
   const lines = articles.map(a => {
@@ -249,9 +270,15 @@ async function _onRequest(context) {
   catch (e) { /* non-fatal — proceed with data-only bullets */ }
   const newsBlock = buildNewsBlock(articles);
 
+  // 2b. Pull today's real analyst grade actions (non-fatal — table may be empty/missing).
+  let grades = [];
+  try { grades = await fetchGrades(db); }
+  catch (e) { /* non-fatal — proceed without grades */ }
+  const gradesBlock = buildGradesBlock(grades);
+
   // 3. Synthesize with Sonnet 5. One retry — this runs once nightly, and a
   // single slow/failed response shouldn't cost a whole day's brief.
-  const userPrompt = `${dataBlock}\n\n${newsBlock}`;
+  const userPrompt = `${dataBlock}\n\n${newsBlock}\n\n${gradesBlock}`;
   let result, lastErr;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -293,6 +320,6 @@ async function _onRequest(context) {
 
   return new Response(JSON.stringify({
     date: dataDate, bullets, sentiment, sector,
-    newsArticleCount: articles.length, model: MODEL,
+    newsArticleCount: articles.length, gradesCount: grades.length, model: MODEL,
   }), { headers: CORS });
 }
