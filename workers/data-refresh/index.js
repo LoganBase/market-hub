@@ -200,6 +200,14 @@ async function runRefresh(env) {
   const fred = await callHub(`${siteUrl}/api/fred-refresh`, hubToken);
   console.log(`[data-refresh] fred-refresh done — ${fred.error ? 'error: ' + fred.error : 'saved: ' + Object.keys(fred.saved ?? {}).join(', ')}`);
 
+  // Generate today's daily_briefs row — grounded in today's own price data +
+  // Finnhub general news, since today's prices are now fresh. Replaces the
+  // Briefing.com email pipeline; /api/macro-brief and brief-theme (below)
+  // both read this table.
+  console.log(`[data-refresh] running daily-brief-generate`);
+  const dailyBrief = await callHub(`${siteUrl}/api/daily-brief-generate`, hubToken);
+  console.log(`[data-refresh] daily-brief-generate — ${dailyBrief.error ? 'error: ' + dailyBrief.error : `sentiment ${dailyBrief.sentiment}, sector ${dailyBrief.sector}, ${dailyBrief.bullets?.length ?? 0} bullets`}`);
+
   // Run signals after refresh — records card statuses and scores outcomes.
   console.log(`[data-refresh] running signals`);
   const sig = await callHub(`${siteUrl}/api/signals`, hubToken);
