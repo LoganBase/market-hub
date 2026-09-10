@@ -34,7 +34,7 @@ async function _onRequest(context) {
   }
   if (!env.FMP_API_KEY) return new Response(JSON.stringify({ error: 'FMP_API_KEY not set' }), { status: 200, headers: CORS });
 
-  const url = `${FMP_BASE}/grades-latest-news?page=0&limit=20&apikey=${env.FMP_API_KEY}`;
+  const url = `${FMP_BASE}/grades-latest-news?page=0&limit=10&apikey=${env.FMP_API_KEY}`;
   const res = await fetch(url);
   const bodyText = await res.text();
 
