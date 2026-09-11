@@ -10,8 +10,8 @@
  *      sourced, dated articles for the "why" behind the numbers.
  *   3. analyst_grades (FMP, via analyst-grades-refresh) — today's real
  *      analyst upgrade/downgrade actions.
- *   4. econ_calendar (FMP, via econ-calendar-refresh) — real scheduled US
- *      releases for the near-term catalyst line.
+ *   4. econ_calendar (FRED + Kalshi, via econ-calendar-refresh) — real
+ *      scheduled US releases for the near-term catalyst line.
  *
  * Output matches daily_briefs' existing shape (bullets/sentiment/sector), so
  * /api/macro-brief and everything downstream needs no changes.
@@ -59,7 +59,7 @@ Structure, in order of priority:
 4. Weave in specific stock or catalyst stories from the Finnhub news that explain those sector moves, when the news actually supports it — don't force a connection that isn't there.
 5. If any analyst grade actions are provided, mention one only if it's a well-known, widely-held name (large/mega-cap, the kind of company a general market audience would recognize) and it's notable enough to matter — a multi-notch move, or a name relevant to the day's sector story. Ignore obscure, illiquid, or unfamiliar tickers even if graded. It's fine to omit this entirely if nothing qualifies.
 6. Include Treasury yield moves (10-year, and 2-year if it moved notably differently) in basis points when relevant to the session's narrative — rate moves are frequently the actual driver of the day, not just background color.
-7. Close with the single most market-relevant item from the SCHEDULED ECONOMIC EVENTS block (prefer High impact — a Fed decision, CPI, jobs report, PMI) as the near-term catalyst to watch. Use a specific stock earnings date from the news only if no such scheduled release qualifies. Omit entirely rather than padding if nothing in the window matters.
+7. Close with the single most market-relevant item from the SCHEDULED ECONOMIC EVENTS block (a Fed decision, CPI, jobs report, GDP, PCE, retail sales, industrial production, or existing home sales) as the near-term catalyst to watch — every item in that block is a major release by construction, so pick whichever is soonest or clearly most relevant to today's session. Use a specific stock earnings date from the news only if no such scheduled release qualifies. Omit entirely rather than padding if nothing in the window matters.
 
 Rules:
 - bullets: array of 5-8 strings, ordered by market significance (highest first). Each is one complete sentence under 25 words. No redundancy between bullets.
@@ -193,24 +193,21 @@ function buildGradesBlock(grades) {
 }
 
 async function fetchEconCalendar(db, dataDate) {
-  // econ-calendar-refresh runs earlier in the same nightly cron and stores the
-  // next 7 days from ITS run date — query from today's data date forward so a
-  // same-day release (e.g. a 8:30am CPI print ahead of the close) is included.
+  // econ-calendar-refresh runs earlier in the same nightly cron and keeps
+  // this table forward-looking only — query from today's data date onward.
   const { results = [] } = await db.prepare(
-    `SELECT event_date, event_time, event, actual, previous, estimate, impact
-     FROM econ_calendar WHERE event_date >= ? ORDER BY event_date ASC, event_time ASC LIMIT 15`
+    `SELECT event_date, event, source, detail
+     FROM econ_calendar WHERE event_date >= ? ORDER BY event_date ASC LIMIT 15`
   ).bind(dataDate).all();
   return results;
 }
 
 function buildEconBlock(events) {
   if (!events.length) return 'SCHEDULED ECONOMIC EVENTS: none available.';
-  const lines = events.map(e => {
-    const est = e.estimate != null ? `, est. ${e.estimate}` : '';
-    const act = e.actual != null ? `, actual ${e.actual}` : '';
-    return `  ${e.event_date}${e.event_time ? ' ' + e.event_time : ''}: ${e.event} [${e.impact ?? 'unknown'} impact]${act}${est}`;
-  });
-  return `SCHEDULED ECONOMIC EVENTS (upcoming US releases — use for the near-term catalyst line, prefer High impact):\n${lines.join('\n')}`;
+  const lines = events.map(e =>
+    `  ${e.event_date}: ${e.event}${e.detail ? ' — ' + e.detail : ''} [${e.source}]`
+  );
+  return `SCHEDULED ECONOMIC EVENTS (upcoming major US releases — use for the near-term catalyst line):\n${lines.join('\n')}`;
 }
 
 function buildNewsBlock(articles) {
