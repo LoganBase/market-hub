@@ -3,20 +3,22 @@
  * Cloudflare Pages Function: GET /api/daily-brief-generate
  *
  * Replaces the broken Briefing.com email pipeline. Grounds a Sonnet 5 call in
- * two REAL data sources — never asks the model to invent numbers:
+ * four REAL data sources — never asks the model to invent numbers:
  *   1. Today's own D1 price data (indices, sectors, yields, VIX, commodities,
  *      currency, breadth) — zero hallucination risk, already flowing nightly.
  *   2. Finnhub general market news (/news?category=general) — structured,
  *      sourced, dated articles for the "why" behind the numbers.
+ *   3. analyst_grades (FMP, via analyst-grades-refresh) — today's real
+ *      analyst upgrade/downgrade actions.
+ *   4. econ_calendar (FMP, via econ-calendar-refresh) — real scheduled US
+ *      releases for the near-term catalyst line.
  *
  * Output matches daily_briefs' existing shape (bullets/sentiment/sector), so
  * /api/macro-brief and everything downstream needs no changes.
  *
- * NOTE: the prompt below is a DRAFT — the data-pull and write path are the
- * real deliverable here; wording gets refined separately.
- *
  * Auth: X-Hub-Token. Env: DB, FINNHUB_API_KEY, ANTHROPIC_API_KEY.
- * Runs nightly from data-refresh, after /api/refresh has written today's prices.
+ * Runs nightly from data-refresh, after /api/refresh has written today's prices,
+ * and after econ-calendar-refresh + analyst-grades-refresh.
  */
 
 const CORS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
@@ -39,7 +41,7 @@ const SECTOR_VOCAB = [
 
 const SYSTEM_PROMPT = `You are a financial market analyst writing a daily market close summary in the style of an institutional wire service. Briefing.com's "Closing Market Summary" is the reference style: dry, numbers-first, no hedging, no speculation beyond what the data and news support. Every real Briefing.com close update opens the same way — index moves plus the single clearest immediate cause, in one sentence — before working down through sectors, rates, and the day's news catalysts.
 
-You will be given (1) today's real closing price data pulled directly from the site's own database, (2) today's real general market news headlines from Finnhub, and (3) today's real analyst upgrade/downgrade actions. Use ONLY these three sources — never invent a price, a percentage, a news event, or an analyst action that isn't in the provided data. If a news article isn't clearly relevant to explaining today's market action, ignore it rather than forcing it into a bullet. If the news doesn't clearly explain a price move, describe the move without inventing a cause.
+You will be given (1) today's real closing price data pulled directly from the site's own database, (2) today's real general market news headlines from Finnhub, (3) today's real analyst upgrade/downgrade actions, and (4) real scheduled US economic releases for the days ahead. Use ONLY these four sources — never invent a price, a percentage, a news event, an analyst action, or a scheduled release date that isn't in the provided data. If a news article isn't clearly relevant to explaining today's market action, ignore it rather than forcing it into a bullet. If the news doesn't clearly explain a price move, describe the move without inventing a cause.
 
 Return ONLY a valid JSON object. No markdown. No code fences. No explanation.
 
@@ -57,7 +59,7 @@ Structure, in order of priority:
 4. Weave in specific stock or catalyst stories from the Finnhub news that explain those sector moves, when the news actually supports it — don't force a connection that isn't there.
 5. If any analyst grade actions are provided, mention one only if it's a well-known, widely-held name (large/mega-cap, the kind of company a general market audience would recognize) and it's notable enough to matter — a multi-notch move, or a name relevant to the day's sector story. Ignore obscure, illiquid, or unfamiliar tickers even if graded. It's fine to omit this entirely if nothing qualifies.
 6. Include Treasury yield moves (10-year, and 2-year if it moved notably differently) in basis points when relevant to the session's narrative — rate moves are frequently the actual driver of the day, not just background color.
-7. If the news names a specific near-term catalyst (a Fed meeting, an economic release, notable earnings), close with it — otherwise omit rather than padding.
+7. Close with the single most market-relevant item from the SCHEDULED ECONOMIC EVENTS block (prefer High impact — a Fed decision, CPI, jobs report, PMI) as the near-term catalyst to watch. Use a specific stock earnings date from the news only if no such scheduled release qualifies. Omit entirely rather than padding if nothing in the window matters.
 
 Rules:
 - bullets: array of 5-8 strings, ordered by market significance (highest first). Each is one complete sentence under 25 words. No redundancy between bullets.
@@ -190,6 +192,27 @@ function buildGradesBlock(grades) {
   return `ANALYST GRADES (today's upgrades/downgrades — mention only if the ticker is a well-known, widely held name; ignore obscure/illiquid symbols):\n${lines.join('\n')}`;
 }
 
+async function fetchEconCalendar(db, dataDate) {
+  // econ-calendar-refresh runs earlier in the same nightly cron and stores the
+  // next 7 days from ITS run date — query from today's data date forward so a
+  // same-day release (e.g. a 8:30am CPI print ahead of the close) is included.
+  const { results = [] } = await db.prepare(
+    `SELECT event_date, event_time, event, actual, previous, estimate, impact
+     FROM econ_calendar WHERE event_date >= ? ORDER BY event_date ASC, event_time ASC LIMIT 15`
+  ).bind(dataDate).all();
+  return results;
+}
+
+function buildEconBlock(events) {
+  if (!events.length) return 'SCHEDULED ECONOMIC EVENTS: none available.';
+  const lines = events.map(e => {
+    const est = e.estimate != null ? `, est. ${e.estimate}` : '';
+    const act = e.actual != null ? `, actual ${e.actual}` : '';
+    return `  ${e.event_date}${e.event_time ? ' ' + e.event_time : ''}: ${e.event} [${e.impact ?? 'unknown'} impact]${act}${est}`;
+  });
+  return `SCHEDULED ECONOMIC EVENTS (upcoming US releases — use for the near-term catalyst line, prefer High impact):\n${lines.join('\n')}`;
+}
+
 function buildNewsBlock(articles) {
   if (!articles.length) return 'NEWS: none available in the lookback window.';
   const lines = articles.map(a => {
@@ -276,9 +299,15 @@ async function _onRequest(context) {
   catch (e) { /* non-fatal — proceed without grades */ }
   const gradesBlock = buildGradesBlock(grades);
 
+  // 2c. Pull upcoming scheduled econ releases (non-fatal — table may be empty/missing).
+  let econEvents = [];
+  try { econEvents = await fetchEconCalendar(db, dataDate); }
+  catch (e) { /* non-fatal — proceed without econ calendar */ }
+  const econBlock = buildEconBlock(econEvents);
+
   // 3. Synthesize with Sonnet 5. One retry — this runs once nightly, and a
   // single slow/failed response shouldn't cost a whole day's brief.
-  const userPrompt = `${dataBlock}\n\n${newsBlock}\n\n${gradesBlock}`;
+  const userPrompt = `${dataBlock}\n\n${newsBlock}\n\n${gradesBlock}\n\n${econBlock}`;
   let result, lastErr;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -320,6 +349,6 @@ async function _onRequest(context) {
 
   return new Response(JSON.stringify({
     date: dataDate, bullets, sentiment, sector,
-    newsArticleCount: articles.length, gradesCount: grades.length, model: MODEL,
+    newsArticleCount: articles.length, gradesCount: grades.length, econEventsCount: econEvents.length, model: MODEL,
   }), { headers: CORS });
 }

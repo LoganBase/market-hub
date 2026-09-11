@@ -200,6 +200,13 @@ async function runRefresh(env) {
   const fred = await callHub(`${siteUrl}/api/fred-refresh`, hubToken);
   console.log(`[data-refresh] fred-refresh done — ${fred.error ? 'error: ' + fred.error : 'saved: ' + Object.keys(fred.saved ?? {}).join(', ')}`);
 
+  // Pull the next 7 days of scheduled US econ releases (FMP) — feeds
+  // daily-brief-generate's "what's next" catalyst line with a real date
+  // instead of depending on Finnhub news happening to mention one.
+  console.log(`[data-refresh] running econ-calendar-refresh`);
+  const econCal = await callHub(`${siteUrl}/api/econ-calendar-refresh`, hubToken);
+  console.log(`[data-refresh] econ-calendar-refresh — ${econCal.error ? 'error: ' + econCal.error : (econCal.usEventsStored ?? 0) + ' US events stored'}`);
+
   // Pull the day's analyst upgrade/downgrade actions (FMP) — restores the
   // Up/Downgrades table Briefing.com's emails used to carry. Runs before
   // daily-brief-generate so a future prompt revision can fold notable grades
