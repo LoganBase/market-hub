@@ -177,7 +177,8 @@ export async function onRequest(context) {
     ).bind(...all).all();
     const { results: indRows = [] } = await db.prepare(
       `SELECT i.symbol, i.sma50, i.sma200, i.rsi14 FROM indicators i
-       INNER JOIN (SELECT symbol, MAX(date) AS d FROM indicators WHERE symbol IN (${ph}) GROUP BY symbol) m
+       INNER JOIN (SELECT symbol, MAX(date) AS d FROM indicators
+                   WHERE symbol IN (${ph}) AND date >= DATE('now', '-40 days') GROUP BY symbol) m
          ON i.symbol = m.symbol AND i.date = m.d`
     ).bind(...all).all();
     const closes = {};

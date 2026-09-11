@@ -90,12 +90,20 @@ async function loadFromD1(db, asOf = null) {
        ORDER BY symbol, date DESC`
     ).all();
 
-    // Latest indicator row per symbol (as-of asOf when set)
+    // Latest indicator row per symbol (as-of asOf when set). Bounded to the
+    // same 35-day window as the price query above: an unbounded GROUP BY
+    // symbol scanned the entire indicators table (~376K rows) on every call,
+    // and /api/scores runs on every page load plus 4x per nightly cron —
+    // that single query was the bulk of the D1 free-tier row-read quota.
+    // A symbol with no indicator row in the window is treated as stale by
+    // the caller anyway (same as the price query), so nothing is lost.
     const { results: indRows } = await db.prepare(
       `SELECT i.symbol, i.sma50, i.sma200, i.rsi14, i.vs200_pct
        FROM indicators i
        INNER JOIN (
-         SELECT symbol, MAX(date) as max_date FROM indicators${asOf ? ` WHERE date <= '${asOf}'` : ''} GROUP BY symbol
+         SELECT symbol, MAX(date) as max_date FROM indicators
+         WHERE date >= DATE(${anchor}, '-35 days')${asOf ? ` AND date <= '${asOf}'` : ''}
+         GROUP BY symbol
        ) latest ON i.symbol = latest.symbol AND i.date = latest.max_date`
     ).all();
 

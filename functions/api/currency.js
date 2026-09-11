@@ -23,6 +23,7 @@ export async function onRequest(context) {
       `SELECT symbol, vs200_pct, percentile, date
        FROM indicators
        WHERE symbol IN ('UUP', 'FXE', 'FXY') AND vs200_pct IS NOT NULL
+         AND date >= DATE('now', '-40 days')
        GROUP BY symbol
        HAVING date = MAX(date)
        ORDER BY symbol`
