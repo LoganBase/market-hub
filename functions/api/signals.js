@@ -4,8 +4,9 @@
  *
  * Called nightly by the scheduler after /api/refresh.
  * 1. Creates card_signals table if it doesn't exist.
- * 2. Fetches today's card statuses from /api/scores.
- * 3. Writes one signal row per card (INSERT OR IGNORE — safe to re-run).
+ * 2. Fetches the current card statuses from /api/scores.
+ * 3. Writes one signal row per card, dated by the latest SPY price date in
+ *    D1 (the data date), not the calendar date (INSERT OR IGNORE — safe to re-run).
  * 4. Fills in 20-trading-day outcomes for pending signals old enough to score.
  *
  * Table schema:
@@ -52,28 +53,35 @@ export async function onRequest(context) {
     // ── 1. Ensure table exists ────────────────────────────────────────────────
     await db.prepare(INIT_SQL).run();
 
-    const today  = new Date().toISOString().slice(0, 10);
     const origin = new URL(context.request.url).origin;
 
-    // ── 2. Fetch today's card scores ──────────────────────────────────────────
+    // ── 2. Resolve the data date: the latest SPY close in D1 ─────────────────
+    // signal_date must be the market date the card statuses were computed
+    // from, not the wall-clock date this endpoint happened to run. /api/scores
+    // scores the latest rows in D1, so its statuses belong to that date. Using
+    // the calendar date stamped weekend rows whenever the cron (or a manual
+    // catch-up) ran on a Saturday/Sunday, carrying Friday's close under the
+    // wrong date.
+    const spyRow = await db.prepare(
+      `SELECT date, close FROM daily_prices WHERE symbol='SPY' ORDER BY date DESC LIMIT 1`
+    ).first();
+    if (!spyRow?.date) throw new Error('No SPY price data in D1 — refresh has not run');
+    const dataDate = spyRow.date;
+    const spyClose = spyRow.close ?? null;
+
+    // ── 3. Fetch card statuses (computed from the same latest D1 rows) ──────
     const scoresRes = await fetch(`${origin}/api/scores`);
     if (!scoresRes.ok) throw new Error(`scores fetch failed: HTTP ${scoresRes.status}`);
     const { cards } = await scoresRes.json();
     if (!cards?.length) throw new Error('No cards returned from /api/scores');
 
-    // ── 3. Get today's SPY close from D1 ─────────────────────────────────────
-    const { results: spyRows } = await db.prepare(
-      `SELECT close FROM daily_prices WHERE symbol='SPY' AND date <= ? ORDER BY date DESC LIMIT 1`
-    ).bind(today).all();
-    const spyClose = spyRows[0]?.close ?? null;
-
-    // ── 4. Write today's signal row for each card (skip if already written) ──
+    // ── 4. Write the signal row for each card (skip if already written) ─────
     let written = 0;
     for (const card of cards) {
       const { meta } = await db.prepare(
         `INSERT OR IGNORE INTO card_signals (card_id, signal_date, status, spy_close)
          VALUES (?, ?, ?, ?)`
-      ).bind(card.id, today, card.status, spyClose).run();
+      ).bind(card.id, dataDate, card.status, spyClose).run();
       if (meta.changes > 0) written++;
     }
 
@@ -81,7 +89,7 @@ export async function onRequest(context) {
     const scored = await fillOutcomes(db);
 
     return new Response(JSON.stringify({
-      date: today,
+      date: dataDate,
       signalsWritten: written,
       outcomesScored: scored,
     }), {
