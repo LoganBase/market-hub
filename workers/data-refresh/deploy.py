@@ -35,7 +35,9 @@ SITE_URL      = os.environ.get('SITE_URL', 'https://market.loganbase.com').strip
 
 WORKER_NAME   = 'market-hub-data-refresh'
 SCRIPT_PATH   = Path(__file__).parent / 'index.js'
-CRON_SCHEDULE = '0 22 * * 1-5'   # Mon–Fri 22:00 UTC = 6 PM ET
+CRON_SCHEDULE = '0 22 * * MON-FRI'   # Mon–Fri 22:00 UTC = 6 PM ET. Use names, not 1-5:
+                                     # Cloudflare's cron treats 1=Sunday, so "1-5" silently
+                                     # ran Sun–Thu and never fired on Friday (found 2026-09-12).
 
 BASE    = f'https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/workers/scripts/{WORKER_NAME}'
 HEADERS = {'Authorization': f'Bearer {CF_API_TOKEN}'}
